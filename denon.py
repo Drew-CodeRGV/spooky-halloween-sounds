@@ -14,7 +14,9 @@ from pathlib import Path
 
 PORT = 23
 LEASES = [Path("/var/lib/NetworkManager/dnsmasq-eth0.leases"), Path("/var/lib/misc/dnsmasq.leases")]
-SUBNET = "10.42.0."   # NetworkManager "shared" connection on the Pi's Ethernet port
+# Networks on the Pi's Ethernet cable: the "shared" DHCP network, plus the fixed
+# network Drew's AVR-1912 is set to (10.10.10.4).
+SUBNETS = ["10.10.10.", "10.42.0."]
 
 INPUTS = ["DVD", "BD", "TV", "SAT/CBL", "GAME", "DVR", "V.AUX", "DOCK", "CD", "NET/USB", "TUNER"]
 SOUND_MODES = {"DIRECT": "Direct", "PURE DIRECT": "Pure Direct", "STEREO": "Stereo",
@@ -50,6 +52,7 @@ def _port_open(host, timeout=0.4):
 def find_denon():
     """Look for the receiver on the Pi's Ethernet link: DHCP leases first, then a quick scan."""
     candidates = []
+    candidates.append("10.10.10.4")  # Drew's Denon's fixed address
     for f in LEASES:
         try:
             for line in f.read_text().splitlines():
@@ -61,14 +64,14 @@ def find_denon():
             pass
     try:  # devices seen on the cable; readable without root, unlike the lease file
         out = subprocess.run(["ip", "neigh", "show", "dev", "eth0"], capture_output=True, text=True, timeout=3).stdout
-        candidates += [line.split()[0] for line in out.splitlines() if line.startswith(SUBNET)]
+        candidates += [line.split()[0] for line in out.splitlines() if line.startswith(tuple(SUBNETS))]
     except (OSError, subprocess.SubprocessError):
         pass
     for ip in dict.fromkeys(candidates):
         if _port_open(ip):
             return ip
     with concurrent.futures.ThreadPoolExecutor(max_workers=64) as pool:
-        hosts = [f"{SUBNET}{i}" for i in range(2, 255)]
+        hosts = [f"{net}{i}" for net in SUBNETS for i in range(2, 255) if f"{net}{i}" not in ("10.10.10.1",)]
         for ip, ok in zip(hosts, pool.map(_port_open, hosts)):
             if ok:
                 return ip

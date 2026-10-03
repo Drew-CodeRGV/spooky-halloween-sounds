@@ -10,12 +10,15 @@
 #   SPOOKY_HOSTNAME=spooky   Pi's network name -> http://spooky.local  (set to "" to leave it alone)
 #   SPOOKY_PORT=80           web dashboard port
 #   SPOOKY_DENON_LINK=1      share the Pi's Wi-Fi with the Denon over the Ethernet cable (0 to skip)
+#   SPOOKY_DENON_NET=10.10.10.1/24   extra Pi address on the cable, for a Denon set to a fixed
+#                            address (Drew's AVR-1912 is fixed at 10.10.10.4). "" to skip.
 set -euo pipefail
 
 REPO_URL="https://github.com/Drew-CodeRGV/spooky-halloween-sounds.git"
 SPOOKY_HOSTNAME="${SPOOKY_HOSTNAME-spooky}"
 SPOOKY_PORT="${SPOOKY_PORT:-80}"
 SPOOKY_DENON_LINK="${SPOOKY_DENON_LINK:-1}"
+SPOOKY_DENON_NET="${SPOOKY_DENON_NET-10.10.10.1/24}"
 
 say()  { printf '\n\033[1;35m🎃 %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m⚠  %s\033[0m\n' "$*"; }
@@ -110,7 +113,16 @@ if [[ "$SPOOKY_DENON_LINK" == "1" ]]; then
     fi
     # "shared" = NetworkManager runs a DHCP server (dnsmasq) on eth0 handing out 10.42.0.x,
     # and routes the Denon's traffic out through the Pi's Wi-Fi.
-    nmcli con modify denon-link ipv4.method shared ipv4.addresses 10.42.0.1/24 >/dev/null 2>&1 || true
+    LINK_ADDRS="10.42.0.1/24"
+    if [[ -n "$SPOOKY_DENON_NET" ]]; then
+      # Skip the extra address if the home Wi-Fi already uses that network
+      if ip -4 route show dev wlan0 2>/dev/null | grep -q "^${SPOOKY_DENON_NET%.*}\."; then
+        warn "Your Wi-Fi uses ${SPOOKY_DENON_NET%.*}.x, so I won't add $SPOOKY_DENON_NET on the Denon cable."
+      else
+        LINK_ADDRS="$LINK_ADDRS,$SPOOKY_DENON_NET"
+      fi
+    fi
+    nmcli con modify denon-link ipv4.method shared ipv4.addresses "$LINK_ADDRS" >/dev/null 2>&1 || true
     nmcli con up denon-link >/dev/null 2>&1 || true   # fine if the cable isn't plugged in yet
   else
     warn "NetworkManager not found; skipping the Denon Ethernet link."
