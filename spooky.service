@@ -1,0 +1,13 @@
+[Unit]
+Description=Spooky Halloween Sounds
+After=sound.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/spooky-halloween-sounds
+ExecStart=/usr/bin/python3 /home/pi/spooky-halloween-sounds/spooky.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
