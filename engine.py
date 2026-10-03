@@ -57,7 +57,7 @@ DEFAULT_CONFIG = {
     ],
     "radio": {"volume": 0.5, "placements": ["p1", "p2"], "override": True, "autoplay": False,
               "last_url": "", "last_name": ""},
-    "denon": {"host": "", "auto_power": False, "input": "DVD", "mode": "DIRECT",
+    "denon": {"host": denon.DEFAULT_HOST, "auto_power": False, "input": "DVD", "mode": "DIRECT",
               "volume_db": -35.0, "max_db": -15.0},
 }
 
@@ -100,7 +100,7 @@ def sanitize(cfg):
     dn["max_db"] = _num(dn["max_db"], -80, 18, d["denon"]["max_db"])
     dn["volume_db"] = _num(dn["volume_db"], -80, dn["max_db"], d["denon"]["volume_db"])
     dn["auto_power"] = bool(dn["auto_power"])
-    dn["host"] = str(dn["host"]).strip()
+    dn["host"] = str(dn["host"]).strip() or denon.DEFAULT_HOST
     return cfg
 
 

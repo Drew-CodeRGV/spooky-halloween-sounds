@@ -17,6 +17,7 @@ LEASES = [Path("/var/lib/NetworkManager/dnsmasq-eth0.leases"), Path("/var/lib/mi
 # Networks on the Pi's Ethernet cable: the "shared" DHCP network, plus the fixed
 # network Drew's AVR-1912 is set to (10.10.10.4).
 SUBNETS = ["10.10.10.", "10.42.0."]
+DEFAULT_HOST = "10.10.10.4"   # Drew's AVR-1912 (fixed address, DHCP off)
 
 INPUTS = ["DVD", "BD", "TV", "SAT/CBL", "GAME", "DVR", "V.AUX", "DOCK", "CD", "NET/USB", "TUNER"]
 SOUND_MODES = {"DIRECT": "Direct", "PURE DIRECT": "Pure Direct", "STEREO": "Stereo",
@@ -52,7 +53,7 @@ def _port_open(host, timeout=0.4):
 def find_denon():
     """Look for the receiver on the Pi's Ethernet link: DHCP leases first, then a quick scan."""
     candidates = []
-    candidates.append("10.10.10.4")  # Drew's Denon's fixed address
+    candidates.append(DEFAULT_HOST)
     for f in LEASES:
         try:
             for line in f.read_text().splitlines():
@@ -76,6 +77,32 @@ def find_denon():
             if ok:
                 return ip
     return None
+
+
+def pi_has_route(host):
+    """Does the Pi have its own address on the same network as host (e.g. 10.10.10.1 for 10.10.10.4)?"""
+    prefix = _addr(host)[0].rsplit(".", 1)[0] + "."
+    try:
+        out = subprocess.run(["ip", "-4", "-o", "addr"], capture_output=True, text=True, timeout=3).stdout
+    except (OSError, subprocess.SubprocessError):
+        return True  # can't tell (e.g. testing on a Mac)
+    return f"inet {prefix}" in out
+
+
+def diagnose(host, err):
+    """Turn a connection error into what to actually do about it."""
+    ip = _addr(host)[0]
+    net = ip.rsplit(".", 1)[0]
+    if not pi_has_route(host):
+        return (f"The Pi has no {net}.x address on the Ethernet cable, so it can't reach {ip}. "
+                f"On the Pi run: sudo nmcli con modify denon-link ipv4.addresses \"10.42.0.1/24,{net}.1/24\" "
+                f"&& sudo nmcli con up denon-link")
+    if isinstance(err, ConnectionRefusedError):
+        return (f"The Denon at {ip} is on the network but refused the connection. Another app may be "
+                f"connected to it (it allows one at a time), or turn on Network Standby / Network Control.")
+    if isinstance(err, (socket.timeout, TimeoutError)):
+        return f"No answer from {ip}. Is the Denon plugged in and the Ethernet cable connected?"
+    return f"Can't reach the Denon at {ip} ({err})"
 
 
 class Denon:
@@ -109,7 +136,7 @@ class Denon:
         try:
             lines = self.send(host, ["PW?", "MV?", "MU?", "SI?", "MS?"])
         except Exception as e:
-            self.status = {"connected": False, "error": f"Can't reach the Denon at {host or '?'} ({e})"}
+            self.status = {"connected": False, "error": diagnose(host, e)}
             return self.status
         st = {"connected": True, "error": None, "host": host}
         for l in lines:
