@@ -7,6 +7,7 @@ It only accepts one connection at a time, so every call opens, talks, and closes
 import concurrent.futures
 import re
 import socket
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -58,7 +59,12 @@ def find_denon():
                     candidates.insert(0 if ("denon" in name or "avr" in name) else len(candidates), ip)
         except OSError:
             pass
-    for ip in candidates:
+    try:  # devices seen on the cable; readable without root, unlike the lease file
+        out = subprocess.run(["ip", "neigh", "show", "dev", "eth0"], capture_output=True, text=True, timeout=3).stdout
+        candidates += [line.split()[0] for line in out.splitlines() if line.startswith(SUBNET)]
+    except (OSError, subprocess.SubprocessError):
+        pass
+    for ip in dict.fromkeys(candidates):
         if _port_open(ip):
             return ip
     with concurrent.futures.ThreadPoolExecutor(max_workers=64) as pool:
