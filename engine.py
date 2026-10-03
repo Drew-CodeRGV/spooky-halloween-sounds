@@ -207,23 +207,30 @@ def beep_sound():
 # ---- Output & radio ------------------------------------------------------------
 
 class Output:
-    """Streams raw 8-channel PCM into aplay. With no aplay (e.g. testing on a laptop) it just keeps time."""
+    """Streams raw 8-channel PCM into aplay. With no aplay (e.g. testing on a laptop) it just keeps time.
+
+    Only the mixer thread touches the aplay process; other threads just ask for a new
+    device, and the mixer switches over on its next write.
+    """
 
     def __init__(self, device):
         self.device = device
         self.proc = None
+        self.proc_device = None
         self.error = None
         self.retry_at = 0
+        self.opened_at = 0
 
     def set_device(self, device):
-        if device != self.device:
-            self.device = device
-            self.close()
+        self.device = device
 
-    def close(self):
-        if self.proc:
-            self.proc.kill()
-            self.proc = None
+    def _kill(self):
+        proc, self.proc = self.proc, None
+        if proc:
+            try:
+                proc.kill()
+            except OSError:
+                pass
 
     def write(self, data):
         if not shutil.which("aplay"):
@@ -231,14 +238,18 @@ class Output:
             self.clock = max(getattr(self, "clock", now), now - 0.1) + BLOCK / RATE
             time.sleep(max(0, self.clock - now))
             return
+        if self.proc is not None and self.proc_device != self.device:
+            self._kill()  # device changed from the dashboard
+            self.retry_at = 0
         if self.proc is None or self.proc.poll() is not None:
             if self.proc is not None:
                 self.error = f"Audio device '{self.device}' stopped. Is the HDMI cable in and the Denon on?"
-                self.proc = None
+                self._kill()
                 self.retry_at = time.time() + 3
             if time.time() < self.retry_at:
                 time.sleep(BLOCK / RATE)
                 return
+            self.proc_device = self.device
             self.proc = subprocess.Popen(
                 ["aplay", "-q", "-D", self.device, "-t", "raw", "-f", "S16_LE",
                  "-c", str(CHANNELS), "-r", str(RATE), "--buffer-time=250000"],
@@ -248,8 +259,9 @@ class Output:
             self.proc.stdin.write(data)
             if time.time() - self.opened_at > 2:
                 self.error = None
-        except (BrokenPipeError, OSError):
-            self.proc.kill()
+        except (BrokenPipeError, OSError, AttributeError):
+            self._kill()
+            self.retry_at = time.time() + 1
 
 
 class Radio:
@@ -519,33 +531,40 @@ class Engine:
     # -- mixer
     def _mix_loop(self):
         while True:
-            out = np.zeros((BLOCK, CHANNELS), dtype=np.float32)
-            with self.lock:
-                for v in self.voices:
-                    chunk = v["buf"][v["pos"]:v["pos"] + BLOCK]
-                    out[:len(chunk)] += chunk
-                    v["pos"] += BLOCK
-                for v in self.voices:
-                    if v["pos"] >= len(v["buf"]):
-                        v["done"].set()
-                self.voices = [v for v in self.voices if v["pos"] < len(v["buf"])]
-                cfg = self.config
-            stereo = self.radio.read(BLOCK)
-            if stereo is not None:
-                spots = [p for p in cfg["placements"] if p["id"] in cfg["radio"]["placements"]]
-                vol = cfg["radio"]["volume"]
-                for i, p in enumerate(spots):
-                    src = stereo.mean(axis=1) if len(spots) == 1 else stereo[:, i % 2]
-                    out[:, p["channel"]] += src * vol * p["volume"]
-            am = cfg["ambience"]
-            amb_spots = [p for p in cfg["placements"] if p["enabled"] and p["id"] in am["placements"]]
-            blocks = self.ambience.read(BLOCK, len(amb_spots))
-            if blocks:
-                for i, (p, blk) in enumerate(zip(amb_spots, blocks)):
-                    src = blk.mean(axis=1) if len(amb_spots) == 1 else blk[:, i % 2]
-                    out[:, p["channel"]] += src * am["volume"] * p["volume"]
-            out *= cfg["master_volume"]
-            self.out.write(np.clip(out, -32768, 32767).astype(np.int16).tobytes())
+            try:
+                self._mix_block()
+            except Exception as e:  # never let one bad block kill the audio for good
+                self.add_log(f"Audio hiccup: {type(e).__name__}: {e}")
+                time.sleep(0.2)
+
+    def _mix_block(self):
+        out = np.zeros((BLOCK, CHANNELS), dtype=np.float32)
+        with self.lock:
+            for v in self.voices:
+                chunk = v["buf"][v["pos"]:v["pos"] + BLOCK]
+                out[:len(chunk)] += chunk
+                v["pos"] += BLOCK
+            for v in self.voices:
+                if v["pos"] >= len(v["buf"]):
+                    v["done"].set()
+            self.voices = [v for v in self.voices if v["pos"] < len(v["buf"])]
+            cfg = self.config
+        stereo = self.radio.read(BLOCK)
+        if stereo is not None:
+            spots = [p for p in cfg["placements"] if p["id"] in cfg["radio"]["placements"]]
+            vol = cfg["radio"]["volume"]
+            for i, p in enumerate(spots):
+                src = stereo.mean(axis=1) if len(spots) == 1 else stereo[:, i % 2]
+                out[:, p["channel"]] += src * vol * p["volume"]
+        am = cfg["ambience"]
+        amb_spots = [p for p in cfg["placements"] if p["enabled"] and p["id"] in am["placements"]]
+        blocks = self.ambience.read(BLOCK, len(amb_spots))
+        if blocks:
+            for i, (p, blk) in enumerate(zip(amb_spots, blocks)):
+                src = blk.mean(axis=1) if len(amb_spots) == 1 else blk[:, i % 2]
+                out[:, p["channel"]] += src * am["volume"] * p["volume"]
+        out *= cfg["master_volume"]
+        self.out.write(np.clip(out, -32768, 32767).astype(np.int16).tobytes())
 
     def _add_voice(self, buf):
         v = {"buf": buf, "pos": 0, "done": threading.Event()}
