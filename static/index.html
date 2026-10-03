@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2a0845">
+<title>Spooky Halloween Sounds</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎃</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="top">
+  <h1>Spooky Halloween Sounds</h1>
+  <div class="status-row">
+    <span id="pill" class="pill">Connecting…</span>
+    <span id="clock" class="muted"></span>
+  </div>
+</header>
+
+<main>
+  <!-- Big controls -->
+  <section class="panel controls">
+    <div class="big-buttons">
+      <button class="btn big pumpkin" id="scareBtn">👻 Scare now</button>
+      <button class="btn big" id="motionBtn">🚶 Pretend someone walked by</button>
+      <button class="btn big danger" id="stopBtn">⏹ Stop everything</button>
+    </div>
+    <div class="now" id="nowPlaying">Quiet… for now.</div>
+    <div id="audioError" class="alert hidden"></div>
+    <label class="slider-row">
+      <span>Master volume</span>
+      <input type="range" id="master" min="0" max="1" step="0.01">
+      <output id="masterOut"></output>
+    </label>
+  </section>
+
+  <!-- Yard map -->
+  <section class="panel">
+    <h2>The Yard</h2>
+    <p class="hint">Tap a speaker to play a random sound there. Glowing = playing now. 🎵 = radio.</p>
+    <div class="yard" id="yard">
+      <div class="house"><div class="roof"></div><div class="door"></div><span>House</span></div>
+      <div class="sidewalk">sidewalk · trick-or-treaters walk here</div>
+    </div>
+  </section>
+
+  <!-- Placements -->
+  <section class="panel">
+    <h2>Speaker Placements</h2>
+    <p class="hint">Name each hiding spot and turn on the ones that have a speaker. <b>Beep</b> plays 3 beeps on that channel so you can find which speaker it is. If the wrong speaker beeps, change the channel number.</p>
+    <div class="cards" id="placements"></div>
+  </section>
+
+  <!-- Timing -->
+  <section class="panel">
+    <h2>When to Play</h2>
+    <div class="segmented" id="mode">
+      <button data-mode="off">Off</button>
+      <button data-mode="motion">Motion sensor</button>
+      <button data-mode="auto">Automatic</button>
+      <button data-mode="both">Both</button>
+    </div>
+    <p class="hint" id="modeHint"></p>
+    <div class="grid2">
+      <fieldset>
+        <legend>Automatic: play every</legend>
+        <div class="range-pair">
+          <input type="number" id="autoMin" min="1"> to <input type="number" id="autoMax" min="1">
+          <select id="autoUnit"><option value="1">seconds</option><option value="60">minutes</option></select>
+        </div>
+        <div class="muted small" id="nextAuto"></div>
+      </fieldset>
+      <fieldset>
+        <legend>After motion: wait before the next scare</legend>
+        <div class="range-pair">
+          <input type="number" id="coolMin" min="1"> to <input type="number" id="coolMax" min="1"> seconds
+        </div>
+        <div class="muted small" id="sensorInfo"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Tricks</legend>
+        <label class="slider-row"><span>Another speaker answers</span><input type="range" id="answer" min="0" max="1" step="0.05"><output id="answerOut"></output></label>
+        <label class="slider-row"><span>Sound creeps between speakers</span><input type="range" id="creep" min="0" max="1" step="0.05"><output id="creepOut"></output></label>
+      </fieldset>
+      <fieldset>
+        <legend>Active hours</legend>
+        <label class="toggle"><input type="checkbox" id="hoursOn"><span>Only play between</span></label>
+        <div class="range-pair"><input type="time" id="hoursStart"> and <input type="time" id="hoursEnd"></div>
+        <div class="muted small">Motion and automatic scares stay silent outside these hours. Buttons on this page always work.</div>
+      </fieldset>
+    </div>
+  </section>
+
+  <!-- Sound matrix -->
+  <section class="panel">
+    <h2>Sounds × Speakers</h2>
+    <p class="hint">Checked = this sound can play from that speaker. ▶ plays it now.</p>
+    <div class="table-wrap"><table class="matrix" id="matrix"></table></div>
+    <div class="upload">
+      <label class="btn" for="fileInput">⬆ Add sounds</label>
+      <input type="file" id="fileInput" accept="audio/*,.wav,.mp3,.ogg,.flac,.m4a" multiple hidden>
+      <span class="muted small">MP3, WAV, OGG, FLAC or M4A. Free sounds: freesound.org (filter by CC0), pixabay.com/sound-effects</span>
+    </div>
+  </section>
+
+  <!-- Radio -->
+  <section class="panel">
+    <h2>Halloween Radio</h2>
+    <div class="radio-now" id="radioNow"></div>
+    <div class="radio-search">
+      <input type="search" id="radioQuery" placeholder="Search stations, e.g. halloween" value="halloween">
+      <button class="btn" id="radioSearchBtn">Search</button>
+    </div>
+    <div class="chips" id="radioTags"></div>
+    <div class="stations" id="stations"></div>
+    <details>
+      <summary>Play a stream link</summary>
+      <div class="radio-search">
+        <input type="url" id="radioUrl" placeholder="https://… (an .mp3, .aac or .m3u8 stream link)">
+        <button class="btn" id="radioUrlBtn">Play</button>
+      </div>
+    </details>
+    <div class="grid2 radio-settings">
+      <fieldset>
+        <legend>Radio plays on</legend>
+        <div class="chips" id="radioSpots"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Radio settings</legend>
+        <label class="slider-row"><span>Radio volume</span><input type="range" id="radioVol" min="0" max="1" step="0.01"><output id="radioVolOut"></output></label>
+        <label class="toggle"><input type="checkbox" id="radioOverride"><span>Radio replaces the spooky sounds</span></label>
+        <label class="toggle"><input type="checkbox" id="radioAutoplay"><span>Resume last station when the Pi restarts</span></label>
+      </fieldset>
+    </div>
+    <p class="muted small">Stations come from the free radio-browser.info directory. Pandora isn't available because it doesn't let other devices play its stations without a paid account.</p>
+  </section>
+
+  <!-- Log -->
+  <section class="panel">
+    <h2>What's Been Happening</h2>
+    <ul class="log" id="log"></ul>
+  </section>
+
+  <section class="panel">
+    <details>
+      <summary>Advanced</summary>
+      <label class="field">Audio device <input id="device" spellcheck="false"></label>
+      <p class="muted small">Default <code>hdmi:CARD=vc4hdmi0,DEV=0</code> is the Pi 4's HDMI port next to the power port. Use <code>hdmi:CARD=vc4hdmi1,DEV=0</code> for the other HDMI port.</p>
+    </details>
+  </section>
+</main>
+
+<div id="toast" class="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>

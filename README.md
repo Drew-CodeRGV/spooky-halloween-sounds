@@ -1,85 +1,60 @@
 # Spooky Halloween Sounds 🎃
 
-A Raspberry Pi 4 + motion sensor that plays a random creepy sound from **one** hidden yard speaker at a time, at a low volume, so people walking by can't tell where it's coming from.
+A Raspberry Pi 4 that hides creepy sounds around your yard. When someone walks by (or on a timer), a random growl, moan or heartbeat plays from **one** hidden speaker at a time, at a low volume, so nobody can tell where it's coming from. A web dashboard lets you control everything from your phone, and it can also play Halloween internet radio.
 
-Audio goes from the Pi's HDMI port to a **Denon AVR-1912** as 7.1 surround, so each of the receiver's speaker terminals (front L/R, center, surround L/R, surround back L/R) can be a separate hiding spot.
+- Up to **7 hiding spots** using the 7.1 outputs of a Denon AVR-1912 (connected to the Pi by HDMI)
+- **Motion sensor**, **automatic timer**, or both
+- Another speaker can "answer" a sound, and a sound can "creep" from speaker to speaker
+- Choose which sounds play from which speaker, upload your own sounds, and set active hours
+- **Halloween radio** from the free radio-browser.info directory, which can replace the spooky sounds while it plays
 
-## Hardware
+## Install (fresh Raspberry Pi)
 
-| Part | Notes |
-|---|---|
-| Raspberry Pi 4 | Use the micro HDMI port **next to the USB-C power port** (HDMI 0) |
-| Micro HDMI → HDMI cable | Micro, not mini. Pi → any HDMI input on the Denon |
-| PIR motion sensor (HC-SR501) | ~$2. Set the jumper to "single trigger" |
-| Denon AVR-1912 + speakers | Up to 7 hiding spots, plus the subwoofer channel if you want ground-shaking rumbles |
+1. Flash **Raspberry Pi OS Lite (64-bit)** with Raspberry Pi Imager. In its settings, set your Wi-Fi, a username/password, and turn on SSH.
+2. Connect the Pi's **HDMI 0** port (the one next to the USB-C power port) to any HDMI input on the Denon with a **micro HDMI → HDMI** cable.
+3. Wire the motion sensor (below), power up the Pi, SSH in, and run:
 
-### PIR wiring
+```bash
+curl -sSL https://raw.githubusercontent.com/Drew-CodeRGV/spooky-halloween-sounds/main/install.sh | sudo bash
+```
+```bash
+sudo reboot
+```
+
+4. On your phone or laptop (on the same Wi-Fi), open **http://spooky.local**
+
+The installer:
+- installs everything the project needs
+- downloads this repo
+- creates the starter sounds
+- keeps the HDMI port on with no TV attached
+- names the Pi `spooky`
+- sets it up to start at boot
+
+Run it again any time to update.
+
+## Motion sensor wiring (HC-SR501)
 ```
 PIR VCC → Pi pin 2  (5V)
 PIR GND → Pi pin 6  (GND)
 PIR OUT → Pi pin 11 (GPIO17)
 ```
-The HC-SR501 outputs 3.3 V, so it's safe to connect straight to the Pi.
+Set the sensor's jumper to "single trigger". The two knobs adjust sensitivity and how long it stays triggered.
 
-## Setup on the Pi
+## Denon AVR-1912 setup
+- Select the HDMI input the Pi is plugged into (the inputs are named after devices, e.g. DVD or GAME). Check under Input Setup that its audio mode is **Auto** or **HDMI**.
+- Setup → Speakers → Speaker Config: set every speaker you use to **Small** or **Large**, not "None". Otherwise the Denon mixes that channel into the other speakers.
+- With the Pi playing, the display should show **MULTI CH IN**. If it shows Stereo or Neural, press the sound mode button until it's **Direct / Multi Ch In**.
+- Turn off **Dynamic Volume** and **Dynamic EQ** (Audyssey menu). They'd make the quiet growls louder.
 
-Use **Raspberry Pi OS Lite** (no desktop). The desktop version's audio system can turn 7.1 into stereo.
-
-```bash
-sudo apt install -y python3-numpy python3-gpiozero ffmpeg alsa-utils
-# copy this folder to /home/pi/spooky-halloween-sounds
-cd ~/spooky-halloween-sounds
-python3 make_placeholder_sounds.py     # optional starter sounds
-```
-
-### 1. Make sure the Pi sees the Denon
-```bash
-aplay -L | grep hdmi
-```
-You should see `hdmi:CARD=vc4hdmi0,DEV=0`. If you plugged into the other HDMI port it'll be `vc4hdmi1`, so change `AUDIO_DEVICE` in `spooky.py`.
-
-If you hear nothing with no TV attached, force the HDMI port on by adding this to the end of the single line in `/boot/firmware/cmdline.txt`, then reboot:
-```
-video=HDMI-A-1:1280x720@60D
-```
-
-### 2. Set up the Denon
-- **Speaker config** (Setup → Speakers → Speaker Config): set every channel you're using to Small or Large, **not "None"**. Otherwise the Denon mixes that channel into the other speakers.
-- Select the Pi's HDMI input. The display should show **MULTI CH IN**. If it says "Stereo" or "Neural", press the sound mode button until you see **Direct** or **Multi Ch In**.
-- Turn off Dynamic Volume and Dynamic EQ (Audyssey menu). They'd make quiet growls louder, which you don't want.
-
-### 3. Find out which channel comes out of which speaker
-```bash
-python3 spooky.py --identify
-```
-It beeps once on channel 0, twice on channel 1, and so on. Walk around and note which speaker plays which count. The receiver itself can also announce each channel:
-```bash
-speaker-test -D hdmi:CARD=vc4hdmi0,DEV=0 -c 8 -t wav -l 1
-```
-
-Then edit `SPEAKERS` in `spooky.py`, **listing them in order along the sidewalk** so the creep effect moves the way someone is walking:
-```python
-SPEAKERS = [
-    {"name": "bushes",  "channel": 0},
-    {"name": "tree",    "channel": 1},
-    {"name": "porch",   "channel": 4},
-    {"name": "mailbox", "channel": 6},
-]
-```
-
-### 4. Test, then go live
-```bash
-python3 spooky.py --test     # press Enter to trigger
-python3 spooky.py            # with the motion sensor
-```
-Run at boot:
-```bash
-sudo cp spooky.service /etc/systemd/system/
-sudo systemctl enable --now spooky
-```
+## Using the dashboard
+1. **Speaker Placements:** turn on the spots that have speakers and press **Beep** on each one. If the beep comes from the wrong speaker, change the HDMI channel number until it's right. Rename the spots to match your yard.
+2. **When to Play:** choose **Motion sensor**, **Automatic** (e.g. every 1–3 minutes), or **Both**. Set active hours so the neighbors get some sleep.
+3. **Sounds × Speakers:** uncheck any sound you don't want from a given spot. For example, keep the dog barks by the gate and the ghost moans by the porch.
+4. **Halloween Radio:** search or tap a tag, then press Play. Choose which speakers the radio plays on. With "Radio replaces the spooky sounds" on, scares pause while the radio plays.
 
 ## Sounds
-Put any `.wav`, `.mp3`, `.ogg`, `.flac` or `.m4a` files in `sounds/`. Each one can play on any speaker, so you don't need a separate file per spot.
+Upload sounds from the dashboard, or copy `.wav`, `.mp3`, `.ogg`, `.flac` or `.m4a` files into `sounds/`.
 
 Free sources:
 - **freesound.org**: search "growl", "dog bark distant", "wolf howl", "creepy whisper", "chains", "branch snap". Filter by the **CC0** license.
@@ -88,9 +63,24 @@ Free sources:
 
 Short clips (2–6 s) work best. Trim any silence at the start. **Low-pitched** sounds are hardest to locate, so they're the most confusing.
 
-## Tuning (top of `spooky.py`)
-- `VOLUME`: keep it low; use the Denon's master volume for the overall level
-- `COOLDOWN`: silence after each scare
-- `ANSWER_CHANCE`: how often a different speaker "answers"
-- `CREEP_CHANCE`: how often a sound moves across 2–3 neighboring speakers
-- `ACTIVE_HOURS`: so the neighbors don't hear growling at 3 a.m.
+## About Pandora
+Pandora doesn't let other devices play its stations without a paid account and login, so the dashboard uses radio-browser.info instead. It's a free, open directory of more than 50,000 internet stations, with plenty tagged halloween, horror and spooky. You can also paste any stream link.
+
+## Troubleshooting
+| Problem | Fix |
+|---|---|
+| Can't open http://spooky.local | Use the IP address the installer printed. Some Android phones don't support `.local` names. |
+| Red "audio device stopped" banner | Check the HDMI cable and that the Denon is on. Run `aplay -L \| grep hdmi`. If you used the other HDMI port, change the device under **Advanced** to `hdmi:CARD=vc4hdmi1,DEV=0`. |
+| Denon shows "PCM 2ch" or plays from every speaker | Check Speaker Config (no "None") and set the sound mode to Direct. |
+| Sensor shows "not available" | Check the wiring, then run `sudo systemctl restart spooky`. |
+| See what it's doing | `journalctl -u spooky -f` |
+
+## Files
+- `install.sh`: sets up a fresh Pi
+- `app.py`: the web dashboard and its API
+- `engine.py`: the audio engine (always-on 7.1 mixer to HDMI), scare scheduler, motion sensor and radio
+- `static/`: dashboard page
+- `make_placeholder_sounds.py`: makes the starter sounds
+- `config.json`: your settings (created on the Pi, not in git)
+
+To try the dashboard on a laptop: `pip install flask numpy` and then `SPOOKY_PORT=8080 python3 app.py`. On a laptop it runs without making sound.

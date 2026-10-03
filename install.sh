@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# Spooky Halloween Sounds: one-shot installer for a fresh Raspberry Pi 4.
+#
+# On the Pi, run:
+#   curl -sSL https://raw.githubusercontent.com/Drew-CodeRGV/spooky-halloween-sounds/main/install.sh | sudo bash
+# or, from inside a copy of this repo:
+#   sudo ./install.sh
+#
+# Options (environment variables):
+#   SPOOKY_HOSTNAME=spooky   Pi's network name -> http://spooky.local  (set to "" to leave it alone)
+#   SPOOKY_PORT=80           web dashboard port
+set -euo pipefail
+
+REPO_URL="https://github.com/Drew-CodeRGV/spooky-halloween-sounds.git"
+SPOOKY_HOSTNAME="${SPOOKY_HOSTNAME-spooky}"
+SPOOKY_PORT="${SPOOKY_PORT:-80}"
+
+say()  { printf '\n\033[1;35m🎃 %s\033[0m\n' "$*"; }
+warn() { printf '\033[1;33m⚠  %s\033[0m\n' "$*"; }
+
+if [[ $EUID -ne 0 ]]; then
+  echo "Please run with sudo:  sudo $0"
+  exit 1
+fi
+
+RUN_USER="${SUDO_USER:-}"
+if [[ -z "$RUN_USER" || "$RUN_USER" == "root" ]]; then
+  RUN_USER="$(getent passwd 1000 | cut -d: -f1)"
+fi
+RUN_HOME="$(getent passwd "$RUN_USER" | cut -d: -f6)"
+[[ -n "$RUN_USER" && -d "$RUN_HOME" ]] || { echo "Couldn't find a normal user account to run as."; exit 1; }
+
+# ---- 1. Packages ----------------------------------------------------------------
+say "Installing software (this can take a few minutes on a new Pi)…"
+export DEBIAN_FRONTEND=noninteractive
+apt-get update -y
+apt-get install -y --no-install-recommends \
+  git python3 python3-numpy python3-flask python3-gpiozero \
+  ffmpeg alsa-utils avahi-daemon ca-certificates curl
+# GPIO backend for the motion sensor (name varies a little between OS releases)
+apt-get install -y --no-install-recommends python3-lgpio || apt-get install -y python3-rpi-lgpio || true
+
+# ---- 2. Get the code ----------------------------------------------------------------
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+if [[ -n "$SCRIPT_DIR" && -f "$SCRIPT_DIR/app.py" && -f "$SCRIPT_DIR/engine.py" ]]; then
+  APP_DIR="$SCRIPT_DIR"
+  say "Using the copy in $APP_DIR"
+else
+  APP_DIR="$RUN_HOME/spooky-halloween-sounds"
+  if [[ -d "$APP_DIR/.git" ]]; then
+    say "Updating $APP_DIR"
+    sudo -u "$RUN_USER" git -C "$APP_DIR" pull --ff-only
+  else
+    say "Downloading to $APP_DIR"
+    sudo -u "$RUN_USER" git clone "$REPO_URL" "$APP_DIR"
+  fi
+fi
+chown -R "$RUN_USER:$RUN_USER" "$APP_DIR"
+
+# ---- 3. Permissions for audio and the motion sensor ---------------------------------
+usermod -aG audio,gpio,video "$RUN_USER" 2>/dev/null || usermod -aG audio "$RUN_USER"
+
+# ---- 4. Starter sounds -----------------------------------------------------------------
+if ! ls "$APP_DIR"/sounds/*.* >/dev/null 2>&1; then
+  say "Creating starter sounds"
+  sudo -u "$RUN_USER" python3 "$APP_DIR/make_placeholder_sounds.py"
+fi
+
+# ---- 5. HDMI: keep the port on even with no TV, so the Denon always gets audio ----------
+CMDLINE=/boot/firmware/cmdline.txt
+[[ -f $CMDLINE ]] || CMDLINE=/boot/cmdline.txt
+NEED_REBOOT=0
+if [[ -f $CMDLINE ]] && ! grep -q "video=HDMI-A-1" "$CMDLINE"; then
+  say "Forcing HDMI port 0 on (so audio works without a TV)"
+  cp "$CMDLINE" "$CMDLINE.spooky-backup"
+  sed -i '1 s/$/ video=HDMI-A-1:1280x720@60D/' "$CMDLINE"
+  NEED_REBOOT=1
+fi
+
+# ---- 6. Network name: http://spooky.local ----------------------------------------------
+if [[ -n "$SPOOKY_HOSTNAME" && "$(hostname)" != "$SPOOKY_HOSTNAME" ]]; then
+  say "Naming this Pi '$SPOOKY_HOSTNAME' so you can open http://$SPOOKY_HOSTNAME.local"
+  if command -v raspi-config >/dev/null; then
+    raspi-config nonint do_hostname "$SPOOKY_HOSTNAME"
+  else
+    hostnamectl set-hostname "$SPOOKY_HOSTNAME"
+    sed -i "s/127\.0\.1\.1.*/127.0.1.1\t$SPOOKY_HOSTNAME/" /etc/hosts
+  fi
+  NEED_REBOOT=1
+fi
+systemctl enable --now avahi-daemon >/dev/null 2>&1 || true
+
+# ---- 7. Desktop audio servers grab the HDMI device; warn if one is running ------------
+if pgrep -x pipewire >/dev/null || pgrep -x pulseaudio >/dev/null; then
+  warn "This Pi is running the desktop audio system (PipeWire/PulseAudio)."
+  warn "It can block 7.1 HDMI audio. Raspberry Pi OS Lite is recommended."
+fi
+
+# ---- 8. Run at boot -----------------------------------------------------------------------
+say "Setting up the spooky service"
+cat > /etc/systemd/system/spooky.service <<EOF
+[Unit]
+Description=Spooky Halloween Sounds
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+User=$RUN_USER
+WorkingDirectory=$APP_DIR
+Environment=SPOOKY_PORT=$SPOOKY_PORT
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/usr/bin/python3 $APP_DIR/app.py
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable spooky.service
+systemctl restart spooky.service
+
+# ---- Done -----------------------------------------------------------------------------------
+IP="$(hostname -I | awk '{print $1}')"
+PORT_SUFFIX=""; [[ "$SPOOKY_PORT" != "80" ]] && PORT_SUFFIX=":$SPOOKY_PORT"
+NAME="${SPOOKY_HOSTNAME:-$(hostname)}"
+say "All set!"
+echo "  Dashboard:  http://$NAME.local$PORT_SUFFIX   (or http://$IP$PORT_SUFFIX)"
+echo "  Logs:       journalctl -u spooky -f"
+echo
+echo "  Denon checklist: pick the Pi's HDMI input, set the speakers you use to Small/Large"
+echo "  (not None), and look for MULTI CH IN on the display."
+if [[ $NEED_REBOOT -eq 1 ]]; then
+  echo
+  warn "Reboot once to finish setup:  sudo reboot"
+fi
