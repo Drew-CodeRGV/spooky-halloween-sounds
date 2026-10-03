@@ -20,6 +20,8 @@ from pathlib import Path
 
 import numpy as np
 
+import denon
+
 ROOT = Path(__file__).resolve().parent
 SOUNDS_DIR = ROOT / "sounds"
 CONFIG_PATH = ROOT / "config.json"
@@ -55,6 +57,8 @@ DEFAULT_CONFIG = {
     ],
     "radio": {"volume": 0.5, "placements": ["p1", "p2"], "override": True, "autoplay": False,
               "last_url": "", "last_name": ""},
+    "denon": {"host": "", "auto_power": False, "input": "DVD", "mode": "DIRECT",
+              "volume_db": -35.0, "max_db": -15.0},
 }
 
 
@@ -91,6 +95,12 @@ def sanitize(cfg):
     cfg["placements"] = placements
     cfg["radio"] = {**d["radio"], **cfg.get("radio", {})}
     cfg["radio"]["volume"] = _num(cfg["radio"]["volume"], 0, 1, 0.5)
+    cfg["denon"] = {**d["denon"], **cfg.get("denon", {})}
+    dn = cfg["denon"]
+    dn["max_db"] = _num(dn["max_db"], -80, 18, d["denon"]["max_db"])
+    dn["volume_db"] = _num(dn["volume_db"], -80, dn["max_db"], d["denon"]["volume_db"])
+    dn["auto_power"] = bool(dn["auto_power"])
+    dn["host"] = str(dn["host"]).strip()
     return cfg
 
 
@@ -358,6 +368,8 @@ class Engine:
         self.sensor_status = "starting"
         threading.Thread(target=self._mix_loop, daemon=True).start()
         threading.Thread(target=self._schedule_loop, daemon=True).start()
+        self.denon = denon.Denon()
+        threading.Thread(target=self._denon_loop, daemon=True).start()
         self._start_sensor()
         self.add_log("Spooky engine started")
         if self.config["radio"].get("autoplay") and self.config["radio"].get("last_url"):
@@ -571,6 +583,69 @@ class Engine:
             return
         self.trigger("simulated motion" if simulated else "motion")
 
+    # -- Denon receiver
+    def _denon_loop(self):
+        """Check the receiver now and then, find it if needed, and power it on/off with active hours."""
+        was_active = None
+        last_search = 0
+        while True:
+            dn = self.config["denon"]
+            if not dn["host"] and time.time() - last_search > 60:
+                last_search = time.time()
+                host = denon.find_denon()
+                if host:
+                    self.update_config({"denon": {"host": host}})
+                    self.add_log(f"Found the Denon at {host}")
+            if self.config["denon"]["host"]:
+                self.denon.refresh(self.config["denon"]["host"])
+            active = self.active_hours()
+            if dn["auto_power"] and self.config["active_hours_enabled"] and was_active is not None \
+                    and active != was_active:
+                self.denon_action("ready" if active else "standby", auto=True)
+            was_active = active
+            time.sleep(15)
+
+    def denon_action(self, action, value=None, auto=False):
+        """Run a dashboard command on the receiver. Returns an error message or None."""
+        dn = self.config["denon"]
+        host = dn["host"]
+        st = self.denon.status
+        try:
+            if action == "find":
+                host = denon.find_denon()
+                if not host:
+                    return "No Denon found on the Ethernet cable. Is it plugged in and turned on at the wall?"
+                self.update_config({"denon": {"host": host}})
+                self.add_log(f"Found the Denon at {host}")
+            elif action == "ready":
+                self.denon.get_ready(host, dn["input"], dn["mode"], dn["volume_db"], dn["max_db"])
+                self.add_log(f"Denon: {'auto ' if auto else ''}on, input {dn['input']}, {dn['volume_db']:g} dB")
+            elif action == "on":
+                self.denon.send(host, ["PWON", "ZMON"])
+            elif action == "standby":
+                self.denon.send(host, ["PWSTANDBY"])
+                self.add_log(f"Denon: {'auto ' if auto else ''}standby")
+            elif action == "mute":
+                self.denon.send(host, ["MUOFF" if st.get("muted") else "MUON"])
+            elif action == "volume":
+                db = min(float(value), dn["max_db"])
+                self.denon.send(host, [denon.db_to_mv(db)])
+            elif action == "nudge":
+                cur = st.get("volume_db", dn["volume_db"])
+                self.denon.send(host, [denon.db_to_mv(min(cur + float(value), dn["max_db"]))])
+            elif action == "input":
+                self.denon.send(host, [f"SI{value}"])
+            elif action == "mode":
+                self.denon.send(host, [f"MS{value}"])
+            else:
+                return f"Unknown command {action}"
+        except Exception as e:
+            return f"Denon didn't respond: {e}"
+        finally:
+            if self.config["denon"]["host"]:
+                self.denon.refresh(self.config["denon"]["host"])
+        return None
+
     # -- radio
     def play_radio(self, url, name):
         self.radio.start(url, name)
@@ -589,8 +664,8 @@ class Engine:
         with self.lock:
             cfg = copy.deepcopy(self.config)
             for k, v in patch.items():
-                if k == "radio" and isinstance(v, dict):
-                    cfg["radio"].update(v)
+                if k in ("radio", "denon") and isinstance(v, dict):
+                    cfg[k].update(v)
                 elif k in DEFAULT_CONFIG:
                     cfg[k] = v
             cfg = sanitize(cfg)
@@ -621,6 +696,7 @@ class Engine:
                 "sensor": self.sensor_status,
                 "audio_error": self.out.error,
                 "radio": self.radio.status(),
+                "denon": self.denon.status,
                 "time": datetime.datetime.now().strftime("%-I:%M %p"),
             },
             "log": list(self.log)[:30],

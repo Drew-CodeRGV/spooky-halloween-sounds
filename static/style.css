@@ -197,6 +197,16 @@ legend { padding: 0 6px; color: var(--muted); font-weight: 600; font-size: .85re
 details summary { cursor: pointer; color: var(--muted); font-weight: 600; margin: 8px 0; }
 .radio-settings { margin-top: 12px; }
 
+/* Denon */
+.denon-status { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
+.denon-status .tag { padding: 4px 12px; border-radius: 999px; background: var(--black-2); border: 1px solid var(--line); font-size: .85rem; }
+.denon-status .tag.good { color: var(--slime); border-color: rgba(157, 255, 92, .5); }
+.denon-status .tag.bad { color: #ffb3bd; border-color: #5a1f2a; }
+.denon-buttons .btn { flex: 1 1 120px; padding: 12px; }
+.denon-volume { display: grid; grid-template-columns: auto 1fr auto 5em; gap: 10px; align-items: center; margin: 14px 0; }
+.denon-volume output { text-align: right; font-size: 1.2rem; font-weight: 700; color: var(--pumpkin); font-variant-numeric: tabular-nums; }
+.field select { font: inherit; }
+
 /* Log */
 .log { list-style: none; margin: 0; padding: 0; max-height: 260px; overflow-y: auto; font-size: .88rem; }
 .log li { padding: 5px 0; border-bottom: 1px solid var(--black-2); display: flex; gap: 10px; }

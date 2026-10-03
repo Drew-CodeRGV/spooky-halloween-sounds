@@ -9,11 +9,13 @@
 # Options (environment variables):
 #   SPOOKY_HOSTNAME=spooky   Pi's network name -> http://spooky.local  (set to "" to leave it alone)
 #   SPOOKY_PORT=80           web dashboard port
+#   SPOOKY_DENON_LINK=1      share the Pi's Wi-Fi with the Denon over the Ethernet cable (0 to skip)
 set -euo pipefail
 
 REPO_URL="https://github.com/Drew-CodeRGV/spooky-halloween-sounds.git"
 SPOOKY_HOSTNAME="${SPOOKY_HOSTNAME-spooky}"
 SPOOKY_PORT="${SPOOKY_PORT:-80}"
+SPOOKY_DENON_LINK="${SPOOKY_DENON_LINK:-1}"
 
 say()  { printf '\n\033[1;35m🎃 %s\033[0m\n' "$*"; }
 warn() { printf '\033[1;33m⚠  %s\033[0m\n' "$*"; }
@@ -36,7 +38,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y --no-install-recommends \
   git python3 python3-numpy python3-flask python3-gpiozero \
-  ffmpeg alsa-utils avahi-daemon ca-certificates curl
+  ffmpeg alsa-utils avahi-daemon ca-certificates curl dnsmasq-base
 # GPIO backend for the motion sensor (name varies a little between OS releases)
 apt-get install -y --no-install-recommends python3-lgpio || apt-get install -y python3-rpi-lgpio || true
 
@@ -90,13 +92,43 @@ if [[ -n "$SPOOKY_HOSTNAME" && "$(hostname)" != "$SPOOKY_HOSTNAME" ]]; then
 fi
 systemctl enable --now avahi-daemon >/dev/null 2>&1 || true
 
-# ---- 7. Desktop audio servers grab the HDMI device; warn if one is running ------------
+# ---- 7. Ethernet cable to the Denon: share the Pi's Wi-Fi with it --------------------------
+if [[ "$SPOOKY_DENON_LINK" == "1" ]]; then
+  if ip route show default 2>/dev/null | grep -q "dev eth0"; then
+    warn "This Pi is using its Ethernet port for internet, so I won't turn it into the Denon link."
+    warn "Connect the Pi to Wi-Fi, then run this installer again."
+  elif command -v nmcli >/dev/null; then
+    if ! nmcli -t -f NAME con show | grep -qx "denon-link"; then
+      say "Sharing Wi-Fi with the Denon over the Ethernet cable"
+      # Remove the default "use Ethernet for internet" profile so it doesn't fight the shared one
+      nmcli -t -f NAME,TYPE con show | awk -F: '$2=="802-3-ethernet"{print $1}' | while read -r c; do
+        [[ "$c" != "denon-link" ]] && nmcli con delete "$c" >/dev/null 2>&1 || true
+      done
+      nmcli con add type ethernet ifname eth0 con-name denon-link \
+        ipv4.method shared ipv6.method ignore connection.autoconnect yes >/dev/null
+    fi
+    nmcli con up denon-link >/dev/null 2>&1 || true   # fine if the cable isn't plugged in yet
+  else
+    warn "NetworkManager not found; skipping the Denon Ethernet link."
+  fi
+  # Only announce spooky.local on Wi-Fi, so phones never get the Denon cable's private address
+  if [[ -f /etc/avahi/avahi-daemon.conf ]] && ip link show wlan0 >/dev/null 2>&1; then
+    if grep -q "^#\?allow-interfaces=" /etc/avahi/avahi-daemon.conf; then
+      sed -i "s/^#\?allow-interfaces=.*/allow-interfaces=wlan0/" /etc/avahi/avahi-daemon.conf
+    else
+      sed -i "/^\[server\]/a allow-interfaces=wlan0" /etc/avahi/avahi-daemon.conf
+    fi
+    systemctl restart avahi-daemon || true
+  fi
+fi
+
+# ---- 8. Desktop audio servers grab the HDMI device; warn if one is running ------------
 if pgrep -x pipewire >/dev/null || pgrep -x pulseaudio >/dev/null; then
   warn "This Pi is running the desktop audio system (PipeWire/PulseAudio)."
   warn "It can block 7.1 HDMI audio. Raspberry Pi OS Lite is recommended."
 fi
 
-# ---- 8. Run at boot -----------------------------------------------------------------------
+# ---- 9. Run at boot -----------------------------------------------------------------------
 say "Setting up the spooky service"
 cat > /etc/systemd/system/spooky.service <<EOF
 [Unit]
@@ -131,6 +163,7 @@ echo "  Logs:       journalctl -u spooky -f"
 echo
 echo "  Denon checklist: pick the Pi's HDMI input, set the speakers you use to Small/Large"
 echo "  (not None), and look for MULTI CH IN on the display."
+echo "  For dashboard power control: Denon Setup → Network → Network Standby: On."
 if [[ $NEED_REBOOT -eq 1 ]]; then
   echo
   warn "Reboot once to finish setup:  sudo reboot"

@@ -29,6 +29,8 @@ def index():
 def state():
     s = eng.state()
     s["terminals"] = engine.TERMINALS
+    s["denon_inputs"] = engine.denon.INPUTS
+    s["denon_modes"] = engine.denon.SOUND_MODES
     return jsonify(s)
 
 
@@ -109,6 +111,13 @@ def radio_play():
         return jsonify({"ok": False, "error": "That doesn't look like a stream link (http://…)"})
     eng.play_radio(url, body.get("name") or url)
     return ok()
+
+
+@app.post("/api/denon")
+def denon_cmd():
+    body = request.get_json(force=True) or {}
+    err = eng.denon_action(body.get("action", ""), body.get("value"))
+    return jsonify({"ok": err is None, "error": err, "denon": eng.denon.status})
 
 
 @app.post("/api/radio/stop")
