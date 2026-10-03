@@ -105,8 +105,12 @@ if [[ "$SPOOKY_DENON_LINK" == "1" ]]; then
         [[ "$c" != "denon-link" ]] && nmcli con delete "$c" >/dev/null 2>&1 || true
       done
       nmcli con add type ethernet ifname eth0 con-name denon-link \
-        ipv4.method shared ipv6.method ignore connection.autoconnect yes >/dev/null
+        ipv4.method shared ipv4.addresses 10.42.0.1/24 ipv6.method ignore \
+        connection.autoconnect yes >/dev/null
     fi
+    # "shared" = NetworkManager runs a DHCP server (dnsmasq) on eth0 handing out 10.42.0.x,
+    # and routes the Denon's traffic out through the Pi's Wi-Fi.
+    nmcli con modify denon-link ipv4.method shared ipv4.addresses 10.42.0.1/24 >/dev/null 2>&1 || true
     nmcli con up denon-link >/dev/null 2>&1 || true   # fine if the cable isn't plugged in yet
   else
     warn "NetworkManager not found; skipping the Denon Ethernet link."
@@ -157,9 +161,28 @@ systemctl restart spooky.service
 IP="$(hostname -I | awk '{print $1}')"
 PORT_SUFFIX=""; [[ "$SPOOKY_PORT" != "80" ]] && PORT_SUFFIX=":$SPOOKY_PORT"
 NAME="${SPOOKY_HOSTNAME:-$(hostname)}"
+# ---- Denon link check ------------------------------------------------------------------------
+DENON_IP=""
+if [[ "$SPOOKY_DENON_LINK" == "1" ]] && ip link show eth0 >/dev/null 2>&1; then
+  for _ in $(seq 1 10); do   # give the Denon a few seconds to ask for an address
+    DENON_IP="$(awk '{print $3}' /var/lib/NetworkManager/dnsmasq-eth0.leases 2>/dev/null | tail -1)"
+    [[ -n "$DENON_IP" ]] && break
+    sleep 1
+  done
+fi
+
 say "All set!"
 echo "  Dashboard:  http://$NAME.local$PORT_SUFFIX   (or http://$IP$PORT_SUFFIX)"
 echo "  Logs:       journalctl -u spooky -f"
+if [[ "$SPOOKY_DENON_LINK" == "1" ]]; then
+  if [[ -n "$DENON_IP" ]]; then
+    echo "  Denon:      got address $DENON_IP from the Pi ✔"
+  elif [[ "$(cat /sys/class/net/eth0/carrier 2>/dev/null)" != "1" ]]; then
+    echo "  Denon:      no Ethernet cable detected yet. Plug it in; the Denon will get a 10.42.0.x address."
+  else
+    echo "  Denon:      cable connected but no address handed out yet. On the Denon: Setup → Network → DHCP: On."
+  fi
+fi
 echo
 echo "  Denon checklist: pick the Pi's HDMI input, set the speakers you use to Small/Large"
 echo "  (not None), and look for MULTI CH IN on the display."
