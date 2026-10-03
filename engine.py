@@ -224,6 +224,24 @@ def beep_sound():
 
 # ---- Output & radio ------------------------------------------------------------
 
+def hdmi_link_state(device):
+    """Describe the HDMI connection behind an ALSA device, e.g. 'connected DENON-AVAMP'.
+
+    The Denon only picks up the Pi's audio if the stream starts after the HDMI link is
+    up, so the engine restarts the stream whenever this changes to connected.
+    """
+    port = "1" if "vc4hdmi1" in device else "0"
+    status = ""
+    for f in Path("/sys/class/drm").glob(f"card*-HDMI-A-{int(port) + 1}/status"):
+        status = f.read_text().strip()
+    name = ""
+    for f in Path(f"/proc/asound/vc4hdmi{port}").glob("eld#*"):
+        for line in f.read_text().splitlines():
+            if line.startswith("monitor_name"):
+                name = line.split(None, 1)[1].strip() if len(line.split(None, 1)) > 1 else ""
+    return f"{status} {name}".strip()
+
+
 class Output:
     """Streams raw 8-channel PCM into aplay. With no aplay (e.g. testing on a laptop) it just keeps time.
 
@@ -242,6 +260,10 @@ class Output:
     def set_device(self, device):
         self.device = device
 
+    def restart(self):
+        """Ask the mixer to reopen the audio device (it does so on its next write)."""
+        self.restart_requested = True
+
     def _kill(self):
         proc, self.proc = self.proc, None
         if proc:
@@ -257,9 +279,10 @@ class Output:
             self.clock = max(getattr(self, "clock", now), now - 0.1) + BLOCK / RATE
             time.sleep(max(0, self.clock - now))
             return
-        if self.proc is not None and self.proc_device != self.device:
-            self._kill()  # device changed from the dashboard
+        if self.proc is not None and (self.proc_device != self.device or getattr(self, "restart_requested", False)):
+            self._kill()  # device changed, or HDMI just (re)connected
             self.retry_at = 0
+        self.restart_requested = False
         if self.proc is None or self.proc.poll() is not None:
             if self.proc is not None:
                 self.error = f"Audio device '{self.device}' stopped. Is the HDMI cable in and the Denon on?"
@@ -695,9 +718,24 @@ class Engine:
         while True:
             time.sleep(0.5)
             self.ambience.want = self.ambience_wanted()
+            self._watch_hdmi()
             if self.config["mode"] in ("auto", "both") and time.time() >= self.next_auto \
                     and self.blocked_reason() is None:
                 self.trigger("timer")
+
+    def _watch_hdmi(self):
+        try:
+            link = hdmi_link_state(self.config["audio_device"])
+        except OSError:
+            return
+        prev = getattr(self, "hdmi_link", None)
+        self.hdmi_link = link
+        if prev is not None and link != prev:
+            if link.startswith("connected") and link != "connected":
+                self.add_log(f"HDMI connected ({link.split(' ', 1)[1]}); restarting audio")
+                threading.Timer(2.0, self.out.restart).start()
+            elif not link.startswith("connected"):
+                self.add_log("HDMI disconnected. Check the cable to the Denon.")
 
     def ambience_wanted(self):
         cfg = self.config
@@ -778,6 +816,7 @@ class Engine:
                 self.add_log(f"Denon: {'auto ' if auto else ''}on, input {dn['input']}, {dn['volume_db']:g} dB")
             elif action == "on":
                 self.denon.send(host, ["PWON", "ZMON"])
+                threading.Timer(6.0, self.out.restart).start()  # let it wake, then resend audio
             elif action == "standby":
                 self.denon.send(host, ["PWSTANDBY"])
                 self.add_log(f"Denon: {'auto ' if auto else ''}standby")
