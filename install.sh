@@ -71,16 +71,9 @@ if ! ls "$APP_DIR"/sounds/*.* >/dev/null 2>&1; then
   sudo -u "$RUN_USER" python3 "$APP_DIR/make_placeholder_sounds.py"
 fi
 
-# ---- 5. HDMI: keep the port on even with no TV, so the Denon always gets audio ----------
-CMDLINE=/boot/firmware/cmdline.txt
-[[ -f $CMDLINE ]] || CMDLINE=/boot/cmdline.txt
+# ---- 5. HDMI ---------------------------------------------------------------------------
+# (No forced HDMI mode: with the Denon connected, the Pi's HDMI audio works without it.)
 NEED_REBOOT=0
-if [[ -f $CMDLINE ]] && ! grep -q "video=HDMI-A-1" "$CMDLINE"; then
-  say "Forcing HDMI port 0 on (so audio works without a TV)"
-  cp "$CMDLINE" "$CMDLINE.spooky-backup"
-  sed -i '1 s/$/ video=HDMI-A-1:1280x720@60D/' "$CMDLINE"
-  NEED_REBOOT=1
-fi
 
 # ---- 6. Network name: http://spooky.local ----------------------------------------------
 if [[ -n "$SPOOKY_HOSTNAME" && "$(hostname)" != "$SPOOKY_HOSTNAME" ]]; then
