@@ -44,6 +44,7 @@ function save(patch) {
   const { radio, denon: dn, ...rest } = patch;
   Object.assign(cfg, rest);
   pending = { ...pending, ...rest };
+  showSaved("Saving…");
   for (const [k, v] of [["radio", radio], ["denon", dn]]) {
     if (!v) continue;
     cfg[k] = { ...cfg[k], ...v };
@@ -53,10 +54,23 @@ function save(patch) {
   saveTimer = setTimeout(async () => {
     const body = pending;
     pending = {};
-    cfg = await api("/api/config", body);
+    try {
+      await api("/api/config", body);   // keep our local copy: it already has the edits
+      showSaved("Saved ✓");
+    } catch {
+      showSaved("Not saved: can't reach the Pi", true);
+    }
   }, 350);
 }
 const savePlacements = () => save({ placements: cfg.placements });
+
+function showSaved(text, bad) {
+  const el = $("saveState");
+  el.textContent = text;
+  el.className = "save-state show" + (bad ? " bad" : "");
+  clearTimeout(showSaved.timer);
+  if (!bad && text !== "Saving…") showSaved.timer = setTimeout(() => (el.className = "save-state"), 1800);
+}
 
 // ---------- Rendering ----------
 
@@ -100,15 +114,19 @@ function renderPlacements() {
         <button class="btn small" data-act="beep">🔔 Beep</button>
         <button class="btn small" data-act="play">▶ Play</button>
       </div>`;
+    const id = p.id;
+    const P = () => cfg.placements.find((x) => x.id === id);
     const [nameIn, enabledIn] = card.querySelectorAll("input");
     const chSel = card.querySelector("select");
     const vol = card.querySelector("input[type=range]");
-    nameIn.oninput = () => { p.name = nameIn.value; savePlacements(); renderYard(); renderMatrix(true); renderRadioSpots(); };
-    enabledIn.onchange = () => { p.enabled = enabledIn.checked; card.classList.toggle("off", !p.enabled); savePlacements(); renderYard(); renderMatrix(true); };
-    chSel.onchange = () => { p.channel = +chSel.value; savePlacements(); };
-    vol.oninput = () => { p.volume = +vol.value; card.querySelector("output").textContent = Math.round(p.volume * 100) + "%"; savePlacements(); };
-    card.querySelector("[data-act=beep]").onclick = () => { api("/api/beep", { channel: p.channel }); toast(`Beeping HDMI channel ${p.channel}: listen for 3 beeps`); };
-    card.querySelector("[data-act=play]").onclick = () => playAt(p.id);
+    nameIn.oninput = () => { P().name = nameIn.value; savePlacements(); renderYard(); renderMatrix(true); renderRadioSpots(); };
+    nameIn.onblur = () => { if (!nameIn.value.trim()) { nameIn.value = P().name = `Speaker ${i + 1}`; savePlacements(); renderYard(); } };
+    nameIn.onkeydown = (e) => { if (e.key === "Enter") nameIn.blur(); };
+    enabledIn.onchange = () => { P().enabled = enabledIn.checked; card.classList.toggle("off", !enabledIn.checked); savePlacements(); renderYard(); renderMatrix(true); };
+    chSel.onchange = () => { P().channel = +chSel.value; savePlacements(); };
+    vol.oninput = () => { P().volume = +vol.value; card.querySelector("output").textContent = Math.round(vol.value * 100) + "%"; savePlacements(); };
+    card.querySelector("[data-act=beep]").onclick = () => { const ch = P().channel; api("/api/beep", { channel: ch }); toast(`Beeping HDMI channel ${ch}: listen for 3 beeps`); };
+    card.querySelector("[data-act=play]").onclick = () => playAt(id);
     wrap.appendChild(card);
   });
 }
@@ -265,7 +283,7 @@ async function denon(action, value) {
 }
 
 async function refreshCfg() {
-  cfg = await api("/api/config", {});
+  cfg.denon = (await api("/api/config", {})).denon;
   renderDenonSettings();
 }
 
@@ -445,6 +463,14 @@ function wire() {
     refresh();
   };
 }
+
+// Send any unsaved change right away if the page is closed or hidden
+window.addEventListener("pagehide", () => {
+  if (!Object.keys(pending).length) return;
+  clearTimeout(saveTimer);
+  navigator.sendBeacon("/api/config", new Blob([JSON.stringify(pending)], { type: "application/json" }));
+  pending = {};
+});
 
 if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 

@@ -197,6 +197,10 @@ legend { padding: 0 6px; color: var(--muted); font-weight: 600; font-size: .85re
 details summary { cursor: pointer; color: var(--muted); font-weight: 600; margin: 8px 0; }
 .radio-settings { margin-top: 12px; }
 
+.save-state { font-size: .82rem; color: var(--slime); opacity: 0; transition: opacity .3s; }
+.save-state.show { opacity: 1; }
+.save-state.bad { color: #ffb3bd; }
+
 /* Denon */
 .denon-status { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
 .denon-status .tag { padding: 4px 12px; border-radius: 999px; background: var(--black-2); border: 1px solid var(--line); font-size: .85rem; }
