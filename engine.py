@@ -108,7 +108,7 @@ def sanitize(cfg):
     dn = cfg["denon"]
     dn["max_db"] = _num(dn["max_db"], -80, 18, d["denon"]["max_db"])
     dn["volume_db"] = _num(dn["volume_db"], -80, dn["max_db"], d["denon"]["volume_db"])
-    dn["auto_power"] = bool(dn["auto_power"])
+    dn["auto_power"] = False   # "Get ready" automation removed from the dashboard
     dn["host"] = str(dn["host"]).strip() or denon.DEFAULT_HOST
     return cfg
 

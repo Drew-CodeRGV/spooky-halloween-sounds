@@ -42,7 +42,6 @@ async function play(body) {
 }
 async function denon(action, value) {
   buzz();
-  if (action === "ready") toast("Talking to the Denon…");
   const r = await api("/api/denon", { action, value });
   if (!r.ok) toast(r.error);
   setTimeout(refresh, 100);
@@ -145,6 +144,7 @@ function renderLive() {
   }
 
   const d = st.denon || {};
+  $("denonMute").textContent = d.muted ? "Unmute" : "Mute";
   $("denonStatus").innerHTML = !d.connected
     ? `<span class="tag bad">Not connected</span>`
     : [`<span class="tag ${d.power === "on" ? "good" : ""}">${d.power === "on" ? "On" : "Standby"}</span>`,

@@ -29,7 +29,9 @@ body.remote {
 
 .r-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .r-row .btn, .r-grid4 .btn { padding: 14px 8px; }
-.r-grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.r-grid4 { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.r-grid4 .btn { grid-column: span 2; }
+.r-grid4 .btn[data-denon="nudge"] { grid-column: span 3; }
 .r-grid4 .btn { font-size: .9rem; }
 
 .r-spots { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }

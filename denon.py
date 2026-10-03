@@ -19,7 +19,7 @@ LEASES = [Path("/var/lib/NetworkManager/dnsmasq-eth0.leases"), Path("/var/lib/mi
 SUBNETS = ["10.10.10.", "10.42.0."]
 DEFAULT_HOST = "10.10.10.4"   # Drew's AVR-1912 (fixed address, DHCP off)
 
-INPUTS = ["DVD", "BD", "TV", "SAT/CBL", "GAME", "DVR", "V.AUX", "DOCK", "CD", "NET/USB", "TUNER"]
+INPUTS = ["DVD", "BD", "TV", "SAT/CBL", "GAME", "GAME2", "V.AUX", "DOCK", "CD", "NET/USB", "TUNER"]  # AVR-1912's list
 SOUND_MODES = {"DIRECT": "Direct", "PURE DIRECT": "Pure Direct", "STEREO": "Stereo",
                "MCH STEREO": "All speakers (Multi Ch Stereo)", "AUTO": "Auto"}
 

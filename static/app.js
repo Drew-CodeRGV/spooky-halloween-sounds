@@ -324,23 +324,18 @@ function renderDenonSettings() {
   const dn = cfg.denon;
   const inputs = state.denon_inputs.map((i) => [i, i]);
   const modes = Object.entries(state.denon_modes);
-  options($("denonReadyInput"), inputs, dn.input);
-  options($("denonReadyMode"), modes, dn.mode);
   options($("denonInput"), [["", "–"], ...inputs], "");
   options($("denonMode"), [["", "–"], ...modes], "");
   $("denonMax").value = dn.max_db; $("denonMaxOut").textContent = dB(dn.max_db);
-  $("denonReadyVol").max = dn.max_db; $("denonVol").max = dn.max_db;
-  $("denonReadyVol").value = dn.volume_db; $("denonReadyVolOut").textContent = dB(dn.volume_db);
-  $("denonAuto").checked = dn.auto_power;
+  $("denonVol").max = dn.max_db;
   $("denonHost").value = dn.host;
 }
 
 async function denon(action, value) {
-  if (["ready", "on", "find"].includes(action)) toast(action === "find" ? "Looking for the Denon…" : "Talking to the Denon…");
+  if (["on", "find"].includes(action)) toast(action === "find" ? "Looking for the Denon…" : "Talking to the Denon…");
   const r = await api("/api/denon", { action, value });
   if (!r.ok) toast(r.error);
   else if (action === "find") { toast(`Found the Denon at ${r.denon.host}`); refreshCfg(); }
-  else if (action === "ready") toast("Denon is ready to haunt");
   state.status.denon = r.denon;
   updateDenon();
 }
@@ -506,16 +501,12 @@ function wire() {
   $("denonVol").onchange = () => { denonVolBusy = Date.now() + 2000; denon("volume", +$("denonVol").value); };
   $("denonInput").onchange = () => $("denonInput").value && denon("input", $("denonInput").value);
   $("denonMode").onchange = () => $("denonMode").value && denon("mode", $("denonMode").value);
-  $("denonReadyInput").onchange = () => save({ denon: { input: $("denonReadyInput").value } });
-  $("denonReadyMode").onchange = () => save({ denon: { mode: $("denonReadyMode").value } });
-  $("denonReadyVol").oninput = () => { $("denonReadyVolOut").textContent = dB($("denonReadyVol").value); save({ denon: { volume_db: +$("denonReadyVol").value } }); };
   $("denonMax").oninput = () => {
     const m = +$("denonMax").value;
     $("denonMaxOut").textContent = dB(m);
-    $("denonReadyVol").max = m; $("denonVol").max = m;
+    $("denonVol").max = m;
     save({ denon: { max_db: m } });
   };
-  $("denonAuto").onchange = () => save({ denon: { auto_power: $("denonAuto").checked } });
   $("denonHost").onchange = () => save({ denon: { host: $("denonHost").value.trim() } });
 
   $("atmosVol").oninput = () => { setSlider("atmosVol", +$("atmosVol").value, true); save({ ambience: { volume: +$("atmosVol").value } }); };

@@ -59,7 +59,6 @@
     <h2>Denon Receiver</h2>
     <div class="denon-status" id="denonStatus">Looking for the Denon…</div>
     <div class="big-buttons denon-buttons">
-      <button class="btn pumpkin" data-denon="ready">🎃 Get ready</button>
       <button class="btn" data-denon="on">⏻ On</button>
       <button class="btn danger" data-denon="standby">⏾ Standby</button>
       <button class="btn" data-denon="mute" id="denonMute">🔇 Mute</button>
@@ -77,12 +76,9 @@
         <label class="field">Sound mode <select id="denonMode"></select></label>
       </fieldset>
       <fieldset>
-        <legend>“Get ready” settings</legend>
-        <label class="field">Switch to input <select id="denonReadyInput"></select></label>
-        <label class="field">Sound mode <select id="denonReadyMode"></select></label>
-        <label class="slider-row"><span>Volume</span><input type="range" id="denonReadyVol" min="-80" step="0.5"><output id="denonReadyVolOut"></output></label>
+        <legend>Safety</legend>
         <label class="slider-row"><span>Never louder than</span><input type="range" id="denonMax" min="-60" max="0" step="1"><output id="denonMaxOut"></output></label>
-        <label class="toggle"><input type="checkbox" id="denonAuto"><span>Turn on (Get ready) when active hours start, and to standby when they end</span></label>
+        <div class="muted small">The volume slider and buttons here can't go above this.</div>
       </fieldset>
     </div>
     <details>
