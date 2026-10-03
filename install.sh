@@ -93,7 +93,22 @@ if [[ -n "$SPOOKY_HOSTNAME" && "$(hostname)" != "$SPOOKY_HOSTNAME" ]]; then
   fi
   NEED_REBOOT=1
 fi
-systemctl enable --now avahi-daemon >/dev/null 2>&1 || true
+# Announce spooky.local with the regular IPv4 address only. Some Macs and phones try the
+# IPv6 address first, can't reach it, and report "No route to host".
+AVAHI_CONF=/etc/avahi/avahi-daemon.conf
+if [[ -f $AVAHI_CONF ]]; then
+  set_avahi() {  # set_avahi section key value
+    if grep -q "^#\?$2=" "$AVAHI_CONF"; then
+      sed -i "s/^#\?$2=.*/$2=$3/" "$AVAHI_CONF"
+    else
+      sed -i "/^\[$1\]/a $2=$3" "$AVAHI_CONF"
+    fi
+  }
+  set_avahi server use-ipv6 no
+  set_avahi publish publish-aaaa-on-ipv4 no
+fi
+systemctl enable avahi-daemon >/dev/null 2>&1 || true
+systemctl restart avahi-daemon >/dev/null 2>&1 || true
 
 # ---- 7. Ethernet cable to the Denon: share the Pi's Wi-Fi with it --------------------------
 if [[ "$SPOOKY_DENON_LINK" == "1" ]]; then
@@ -199,6 +214,9 @@ echo
 echo "  Denon checklist: pick the Pi's HDMI input, set the speakers you use to Small/Large"
 echo "  (not None), and look for MULTI CH IN on the display."
 echo "  For dashboard power control: Denon Setup → Network → Network Standby: On."
+sync   # make sure everything is written to the SD card before anyone pulls the plug
+echo
+echo "  Before unplugging the Pi, shut it down first:  sudo shutdown -h now"
 if [[ $NEED_REBOOT -eq 1 ]]; then
   echo
   warn "Reboot once to finish setup:  sudo reboot"
