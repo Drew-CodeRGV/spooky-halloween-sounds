@@ -4,11 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#2a0845">
-<title>Spooky Halloween Sounds</title>
+<title>Lentz Spooktacular Yard</title>
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Spooky">
+<meta name="apple-mobile-web-app-title" content="Spooktacular">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" type="image/png" href="/static/icons/icon-192.png">
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
@@ -18,7 +18,7 @@
 </head>
 <body>
 <header class="top">
-  <h1>Spooky Halloween Sounds</h1>
+  <h1>Lentz Spooktacular Yard</h1>
   <div class="status-row">
     <span id="pill" class="pill">Connecting…</span>
     <span id="clock" class="muted"></span>
@@ -41,6 +41,16 @@
       <input type="range" id="master" min="0" max="1" step="0.01">
       <output id="masterOut"></output>
     </label>
+  </section>
+
+  <!-- Yard map -->
+  <section class="panel">
+    <h2>The Yard</h2>
+    <p class="hint">Tap a speaker to play a random sound there. Glowing = playing now. 🎵 = radio.</p>
+    <div class="yard" id="yard">
+      <div class="house"><div class="roof"></div><div class="door"></div><span>House</span></div>
+      <div class="sidewalk">sidewalk · trick-or-treaters walk here</div>
+    </div>
   </section>
 
   <!-- Denon -->
@@ -82,16 +92,6 @@
       </div>
       <p class="muted small">The Denon is connected by Ethernet cable to the Pi, which shares its Wi-Fi with it. To turn it on from standby, set the Denon's <b>Network Standby</b> (Setup → Network) to <b>On</b>.</p>
     </details>
-  </section>
-
-  <!-- Yard map -->
-  <section class="panel">
-    <h2>The Yard</h2>
-    <p class="hint">Tap a speaker to play a random sound there. Glowing = playing now. 🎵 = radio.</p>
-    <div class="yard" id="yard">
-      <div class="house"><div class="roof"></div><div class="door"></div><span>House</span></div>
-      <div class="sidewalk">sidewalk · trick-or-treaters walk here</div>
-    </div>
   </section>
 
   <!-- Placements -->
