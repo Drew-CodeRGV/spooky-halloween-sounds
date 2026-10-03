@@ -128,17 +128,35 @@ if [[ "$SPOOKY_DENON_LINK" == "1" ]]; then
     fi
     # "shared" = NetworkManager runs a DHCP server (dnsmasq) on eth0 handing out 10.42.0.x,
     # and routes the Denon's traffic out through the Pi's Wi-Fi.
-    LINK_ADDRS="10.42.0.1/24"
-    if [[ -n "$SPOOKY_DENON_NET" ]]; then
-      # Skip the extra address if the home Wi-Fi already uses that network
-      if ip -4 route show dev wlan0 2>/dev/null | grep -q "^${SPOOKY_DENON_NET%.*}\."; then
-        warn "Your Wi-Fi uses ${SPOOKY_DENON_NET%.*}.x, so I won't add $SPOOKY_DENON_NET on the Denon cable."
-      else
-        LINK_ADDRS="$LINK_ADDRS,$SPOOKY_DENON_NET"
-      fi
+    nmcli con modify denon-link ipv4.method shared ipv4.addresses 10.42.0.1/24 >/dev/null 2>&1 || true
+
+    # A Denon with a fixed address (Drew's is 10.10.10.4) needs the Pi on its network too.
+    # NetworkManager won't put a second address on a "shared" connection, so a dispatcher
+    # script adds it every time the cable comes up.
+    HOOK=/etc/NetworkManager/dispatcher.d/90-spooky-denon
+    if [[ -n "$SPOOKY_DENON_NET" ]] && ip -4 route show dev wlan0 2>/dev/null | grep -q "^${SPOOKY_DENON_NET%.*}\."; then
+      warn "Your Wi-Fi uses ${SPOOKY_DENON_NET%.*}.x, so I won't add $SPOOKY_DENON_NET on the Denon cable."
+      rm -f "$HOOK"
+    elif [[ -n "$SPOOKY_DENON_NET" ]]; then
+      say "Adding $SPOOKY_DENON_NET on the Denon cable (for a Denon with a fixed address)"
+      cat > "$HOOK" <<HOOK_EOF
+#!/bin/sh
+# Spooky Halloween Sounds: extra address on the Denon cable so the Pi can reach a Denon
+# set to a fixed address on ${SPOOKY_DENON_NET%.*}.x.
+[ "\$1" = "eth0" ] || exit 0
+case "\$2" in
+  up|reapply|connectivity-change) ip addr replace $SPOOKY_DENON_NET dev eth0 ;;
+esac
+HOOK_EOF
+      chmod 755 "$HOOK"
+      systemctl enable --now NetworkManager-dispatcher >/dev/null 2>&1 || true
+    else
+      rm -f "$HOOK"
     fi
-    nmcli con modify denon-link ipv4.method shared ipv4.addresses "$LINK_ADDRS" >/dev/null 2>&1 || true
     nmcli con up denon-link >/dev/null 2>&1 || true   # fine if the cable isn't plugged in yet
+    if [[ -n "$SPOOKY_DENON_NET" && -f "$HOOK" ]] && ip link show eth0 | grep -q "state UP"; then
+      ip addr replace "$SPOOKY_DENON_NET" dev eth0   # right now, without waiting for the hook
+    fi
   else
     warn "NetworkManager not found; skipping the Denon Ethernet link."
   fi
@@ -185,12 +203,16 @@ systemctl enable spooky.service
 systemctl restart spooky.service
 
 # ---- Done -----------------------------------------------------------------------------------
-IP="$(hostname -I | awk '{print $1}')"
+IP="$(ip -4 -o addr show wlan0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 | head -1)"
+[[ -n "$IP" ]] || IP="$(hostname -I | awk '{print $1}')"
 PORT_SUFFIX=""; [[ "$SPOOKY_PORT" != "80" ]] && PORT_SUFFIX=":$SPOOKY_PORT"
 NAME="${SPOOKY_HOSTNAME:-$(hostname)}"
 # ---- Denon link check ------------------------------------------------------------------------
 DENON_IP=""
-if [[ "$SPOOKY_DENON_LINK" == "1" ]] && ip link show eth0 >/dev/null 2>&1; then
+DENON_FIXED="${SPOOKY_DENON_NET%.*}.4"
+if [[ -n "$SPOOKY_DENON_NET" ]] && ping -c 2 -W 1 "$DENON_FIXED" >/dev/null 2>&1; then
+  DENON_IP="$DENON_FIXED"
+elif [[ "$SPOOKY_DENON_LINK" == "1" ]] && ip link show eth0 >/dev/null 2>&1; then
   for _ in $(seq 1 10); do   # give the Denon a few seconds to ask for an address
     DENON_IP="$(awk '{print $3}' /var/lib/NetworkManager/dnsmasq-eth0.leases 2>/dev/null | tail -1)"
     [[ -n "$DENON_IP" ]] && break
@@ -203,11 +225,12 @@ echo "  Dashboard:  http://$NAME.local$PORT_SUFFIX   (or http://$IP$PORT_SUFFIX)
 echo "  Logs:       journalctl -u spooky -f"
 if [[ "$SPOOKY_DENON_LINK" == "1" ]]; then
   if [[ -n "$DENON_IP" ]]; then
-    echo "  Denon:      got address $DENON_IP from the Pi ✔"
+    echo "  Denon:      reachable at $DENON_IP ✔"
   elif [[ "$(cat /sys/class/net/eth0/carrier 2>/dev/null)" != "1" ]]; then
     echo "  Denon:      no Ethernet cable detected yet. Plug it in; the Denon will get a 10.42.0.x address."
   else
-    echo "  Denon:      cable connected but no address handed out yet. On the Denon: Setup → Network → DHCP: On."
+    echo "  Denon:      cable connected, but no answer at $DENON_FIXED and no DHCP request yet."
+    echo "              Is the Denon plugged in? (Or set it to DHCP: Setup → Network → DHCP: On.)"
   fi
 fi
 echo
