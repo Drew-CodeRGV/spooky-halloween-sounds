@@ -229,7 +229,8 @@ class Output:
         if proc:
             try:
                 proc.kill()
-            except OSError:
+                proc.wait(timeout=2)  # reap it so it doesn't linger as a zombie
+            except (OSError, subprocess.TimeoutExpired):
                 pass
 
     def write(self, data):
