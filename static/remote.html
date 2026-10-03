@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#2a0845">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Spooky">
+<title>Spooky Remote</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/static/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Creepster&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/remote.css">
+</head>
+<body class="remote">
+<header class="r-top">
+  <h1>Spooky</h1>
+  <span id="pill" class="pill">Connecting…</span>
+</header>
+
+<main class="r-main">
+  <section class="panel r-hero">
+    <button class="scare-btn" id="scareBtn" aria-label="Scare now">
+      <span class="scare-face">🎃</span>
+      <span class="scare-label">SCARE NOW</span>
+    </button>
+    <div class="now" id="nowPlaying">Quiet… for now.</div>
+    <div class="r-row">
+      <button class="btn" id="motionBtn">🚶 Walk-by</button>
+      <button class="btn danger" id="stopBtn">⏹ Stop</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Speakers</h2>
+    <div class="r-spots" id="spots"></div>
+  </section>
+
+  <section class="panel">
+    <div class="r-head">
+      <h2>Soundboard</h2>
+      <select id="target" aria-label="Play from"></select>
+    </div>
+    <div class="r-sounds" id="sounds"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Mode</h2>
+    <div class="segmented" id="mode">
+      <button data-mode="off">Off</button>
+      <button data-mode="motion">Motion</button>
+      <button data-mode="auto">Auto</button>
+      <button data-mode="both">Both</button>
+    </div>
+    <label class="slider-row"><span>Spooky volume</span><input type="range" id="master" min="0" max="1" step="0.01"><output id="masterOut"></output></label>
+  </section>
+
+  <section class="panel">
+    <h2>Radio</h2>
+    <div id="radio"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Denon</h2>
+    <div class="denon-status" id="denonStatus"></div>
+    <div class="r-grid4">
+      <button class="btn pumpkin" data-denon="ready">Ready</button>
+      <button class="btn" data-denon="nudge" data-value="-2">Vol −</button>
+      <button class="btn" data-denon="nudge" data-value="2">Vol +</button>
+      <button class="btn danger" data-denon="standby">Off</button>
+    </div>
+  </section>
+
+  <a class="r-link" href="/">Full dashboard →</a>
+</main>
+
+<div id="toast" class="toast"></div>
+<script src="/static/remote.js"></script>
+</body>
+</html>

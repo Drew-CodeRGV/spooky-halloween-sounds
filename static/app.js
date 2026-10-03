@@ -446,6 +446,8 @@ function wire() {
   };
 }
 
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+
 wire();
 refresh().then(searchRadio);
 setInterval(refresh, 1500);

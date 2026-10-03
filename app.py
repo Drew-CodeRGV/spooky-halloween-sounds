@@ -25,6 +25,23 @@ def index():
     return send_from_directory(app.static_folder, "index.html")
 
 
+@app.get("/remote")
+def remote():
+    return send_from_directory(app.static_folder, "remote.html")
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    return send_from_directory(app.static_folder, "manifest.webmanifest", mimetype="application/manifest+json")
+
+
+@app.get("/sw.js")
+def service_worker():
+    resp = send_from_directory(app.static_folder, "sw.js", mimetype="text/javascript")
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
 @app.get("/api/state")
 def state():
     s = eng.state()

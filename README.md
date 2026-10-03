@@ -36,6 +36,11 @@ The installer:
 
 Run it again any time to update.
 
+## Phone remote (installable app)
+Open **http://spooky.local/remote** on your phone. It has a big **Scare Now** button, a button for each speaker, a soundboard, mode switches, radio, and Denon power and volume. To put it on your home screen:
+- **iPhone:** in Safari, tap Share → **Add to Home Screen**. It opens full-screen like an app.
+- **Android:** in Chrome, tap ⋮ → **Add to Home screen**. Long-press the icon for **Scare now** and **Stop** shortcuts.
+
 ## Motion sensor wiring (HC-SR501)
 ```
 PIR VCC → Pi pin 2  (5V)
@@ -86,7 +91,8 @@ Pandora doesn't let other devices play its stations without a paid account and l
 - `app.py`: the web dashboard and its API
 - `denon.py`: Denon network control (port 23 commands)
 - `engine.py`: the audio engine (always-on 7.1 mixer to HDMI), scare scheduler, motion sensor and radio
-- `static/`: dashboard page
+- `static/`: dashboard (`index.html`), phone remote (`remote.html`), app manifest, service worker, icons
+- `make_icons.py`: draws the app icons
 - `make_placeholder_sounds.py`: makes the starter sounds
 - `config.json`: your settings (created on the Pi, not in git)
 
