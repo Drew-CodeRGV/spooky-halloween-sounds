@@ -95,6 +95,29 @@
     </details>
   </section>
 
+  <!-- Background atmosphere -->
+  <section class="panel">
+    <h2>Background Atmosphere</h2>
+    <p class="hint">A loop that keeps playing quietly underneath, with the scares on top. Tap one to start it; tap it again to stop.</p>
+    <div class="atmos" id="atmos"></div>
+    <div class="grid2 radio-settings">
+      <fieldset>
+        <legend>Plays on</legend>
+        <div class="chips" id="atmosSpots"></div>
+        <div class="muted small">Each speaker plays a different part of the loop, so the yard sounds bigger.</div>
+      </fieldset>
+      <fieldset>
+        <legend>Atmosphere settings</legend>
+        <label class="slider-row"><span>Volume</span><input type="range" id="atmosVol" min="0" max="1" step="0.01"><output id="atmosVolOut"></output></label>
+        <label class="toggle"><input type="checkbox" id="atmosHours"><span>Only during active hours</span></label>
+        <div class="upload">
+          <label class="btn small" for="atmosFile">⬆ Add background</label>
+          <input type="file" id="atmosFile" accept="audio/*,.wav,.mp3,.ogg,.flac,.m4a" multiple hidden>
+        </div>
+      </fieldset>
+    </div>
+  </section>
+
   <!-- Placements -->
   <section class="panel">
     <h2>Speaker Placements</h2>

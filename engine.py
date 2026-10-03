@@ -24,6 +24,8 @@ import denon
 
 ROOT = Path(__file__).resolve().parent
 SOUNDS_DIR = ROOT / "sounds"
+AMBIENCE_DIR = SOUNDS_DIR / "ambience"
+AMBIENCE_FADE = 2.5   # seconds to fade a background loop in/out
 CONFIG_PATH = ROOT / "config.json"
 RATE = 48000
 CHANNELS = 8
@@ -57,6 +59,8 @@ DEFAULT_CONFIG = {
     ],
     "radio": {"volume": 0.5, "placements": ["p1", "p2"], "override": True, "autoplay": False,
               "last_url": "", "last_name": ""},
+    "ambience": {"on": False, "track": "graveyard.mp3", "volume": 0.4,
+                 "placements": [f"p{i + 1}" for i in range(7)], "active_hours_only": True},
     "denon": {"host": denon.DEFAULT_HOST, "auto_power": False, "input": "DVD", "mode": "DIRECT",
               "volume_db": -35.0, "max_db": -15.0},
 }
@@ -95,6 +99,11 @@ def sanitize(cfg):
     cfg["placements"] = placements
     cfg["radio"] = {**d["radio"], **cfg.get("radio", {})}
     cfg["radio"]["volume"] = _num(cfg["radio"]["volume"], 0, 1, 0.5)
+    cfg["ambience"] = {**d["ambience"], **cfg.get("ambience", {})}
+    am = cfg["ambience"]
+    am["volume"] = _num(am["volume"], 0, 1, d["ambience"]["volume"])
+    am["on"] = bool(am["on"])
+    am["active_hours_only"] = bool(am["active_hours_only"])
     cfg["denon"] = {**d["denon"], **cfg.get("denon", {})}
     dn = cfg["denon"]
     dn["max_db"] = _num(dn["max_db"], -80, 18, d["denon"]["max_db"])
@@ -146,6 +155,28 @@ def decode(path):
     if path.suffix.lower() == ".wav":
         return read_wav(path)
     raise ValueError("install ffmpeg to play non-WAV files")
+
+
+def decode_stereo(path):
+    """Any audio file -> (n, 2) float32 samples at RATE."""
+    if shutil.which("ffmpeg"):
+        out = subprocess.run(
+            ["ffmpeg", "-v", "error", "-i", str(path), "-f", "s16le", "-ac", "2", "-ar", str(RATE), "-"],
+            capture_output=True, check=True).stdout
+        return np.frombuffer(out, dtype=np.int16).reshape(-1, 2).astype(np.float32)
+    mono = decode(path)
+    return np.stack([mono, mono], axis=1)
+
+
+def make_loop(x, fade=1.5):
+    """Blend the end of a recording into its start so it repeats without a click or gap."""
+    n = int(fade * RATE)
+    if len(x) < n * 4:
+        return x
+    k = np.linspace(0, np.pi / 2, n, dtype=np.float32)[:, None]
+    body = x[:-n].copy()
+    body[:n] = x[:n] * np.sin(k) + x[-n:] * np.cos(k)
+    return body
 
 
 def render(mono, gains):
@@ -314,6 +345,67 @@ class Radio:
                 "buffering": self.playing and self.frames == 0 and time.time() - self.started < 15}
 
 
+class Ambience:
+    """A background loop that fades in/out and plays on several speakers at once.
+
+    Each speaker reads the loop from a different starting point, so the same
+    owl or drip doesn't come out of every speaker at the same moment.
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.want = None          # filename we should be playing, or None for silence
+        self.track = None         # filename currently loaded
+        self.buf = None
+        self.pos = 0
+        self.gain = 0.0
+        self.loading = None
+        self.ready = (None, None)  # (filename, buffer) loaded in the background
+        self.error = None
+
+    def _load(self, name):
+        try:
+            buf = make_loop(decode_stereo(AMBIENCE_DIR / name))
+            with self.lock:
+                self.ready = (name, buf)
+                self.error = None
+        except Exception as e:
+            self.error = f"Couldn't load {name}: {e}"
+        finally:
+            self.loading = None
+
+    def read(self, n, k):
+        """Return k blocks of (n, 2) audio, one per speaker, or None when silent."""
+        with self.lock:
+            want = self.want
+            if want and want != self.track and self.ready[0] != want and self.loading != want:
+                self.loading = want
+                threading.Thread(target=self._load, args=(want,), daemon=True).start()
+            step = n / (RATE * AMBIENCE_FADE)
+            g0 = self.gain
+            if want == self.track and self.buf is not None:
+                self.gain = min(1.0, g0 + step)
+            else:
+                self.gain = max(0.0, g0 - step)
+                if self.gain == 0.0:  # faded out: switch to the next loop (or stay quiet)
+                    if want and self.ready[0] == want:
+                        self.track, self.buf = self.ready
+                        self.ready, self.pos = (None, None), 0
+                    elif not want:
+                        self.track, self.buf = None, None
+            buf, pos, g1 = self.buf, self.pos, self.gain
+            if buf is None or (g0 == 0 and g1 == 0) or k == 0:
+                return None
+            self.pos = (pos + n) % len(buf)
+        ramp = np.linspace(g0, g1, n, dtype=np.float32)[:, None]
+        length = len(buf)
+        return [buf[(pos + j * length // k + np.arange(n)) % length] * ramp for j in range(k)]
+
+    def status(self):
+        return {"playing": self.track if self.buf is not None and self.gain > 0 else None,
+                "want": self.want, "loading": bool(self.loading), "error": self.error}
+
+
 def search_stations(term):
     """Search the free, open radio-browser.info directory by tag, then by name."""
     params = {"hidebroken": "true", "order": "clickcount", "reverse": "true", "limit": "30"}
@@ -357,6 +449,7 @@ class Engine:
         self.refresh_sounds()
         self.voices = []
         self.radio = Radio()
+        self.ambience = Ambience()
         self.out = Output(self.config["audio_device"])
         self.scaring = threading.Lock()
         self.stop_gen = 0
@@ -444,6 +537,13 @@ class Engine:
                 for i, p in enumerate(spots):
                     src = stereo.mean(axis=1) if len(spots) == 1 else stereo[:, i % 2]
                     out[:, p["channel"]] += src * vol * p["volume"]
+            am = cfg["ambience"]
+            amb_spots = [p for p in cfg["placements"] if p["enabled"] and p["id"] in am["placements"]]
+            blocks = self.ambience.read(BLOCK, len(amb_spots))
+            if blocks:
+                for i, (p, blk) in enumerate(zip(amb_spots, blocks)):
+                    src = blk.mean(axis=1) if len(amb_spots) == 1 else blk[:, i % 2]
+                    out[:, p["channel"]] += src * am["volume"] * p["volume"]
             out *= cfg["master_volume"]
             self.out.write(np.clip(out, -32768, 32767).astype(np.int16).tobytes())
 
@@ -556,9 +656,27 @@ class Engine:
     def _schedule_loop(self):
         while True:
             time.sleep(0.5)
+            self.ambience.want = self.ambience_wanted()
             if self.config["mode"] in ("auto", "both") and time.time() >= self.next_auto \
                     and self.blocked_reason() is None:
                 self.trigger("timer")
+
+    def ambience_wanted(self):
+        cfg = self.config
+        am = cfg["ambience"]
+        if not am["on"] or not (AMBIENCE_DIR / am["track"]).is_file():
+            return None
+        if am["active_hours_only"] and not self.active_hours(cfg):
+            return None
+        if self.radio.playing and cfg["radio"]["override"]:
+            return None
+        return am["track"]
+
+    def ambience_tracks(self):
+        if not AMBIENCE_DIR.is_dir():
+            return []
+        return [{"name": p.name, "label": p.stem.replace("_", " ").title()}
+                for p in sorted(AMBIENCE_DIR.iterdir()) if p.suffix.lower() in EXTS]
 
     def _start_sensor(self):
         pin = self.config["pir_pin"]
@@ -664,7 +782,7 @@ class Engine:
         with self.lock:
             cfg = copy.deepcopy(self.config)
             for k, v in patch.items():
-                if k in ("radio", "denon") and isinstance(v, dict):
+                if k in ("radio", "denon", "ambience") and isinstance(v, dict):
                     cfg[k].update(v)
                 elif k in DEFAULT_CONFIG:
                     cfg[k] = v
@@ -684,6 +802,7 @@ class Engine:
         np_ = {"sound": cur["sound"], "spots": cur["spots"]} if cur and not cur["voice"]["done"].is_set() else None
         return {
             "config": cfg,
+            "ambience": self.ambience_tracks(),
             "sounds": [{"name": n, "label": Path(n).stem, "seconds": round(len(m) / RATE, 1)}
                        for n, m in self.sounds.items()],
             "status": {
@@ -697,6 +816,7 @@ class Engine:
                 "audio_error": self.out.error,
                 "radio": self.radio.status(),
                 "denon": self.denon.status,
+                "ambience": self.ambience.status(),
                 "time": datetime.datetime.now().strftime("%-I:%M %p"),
             },
             "log": list(self.log)[:30],

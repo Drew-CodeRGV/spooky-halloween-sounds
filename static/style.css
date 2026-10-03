@@ -201,6 +201,21 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 600; margin
 .save-state.show { opacity: 1; }
 .save-state.bad { color: #ffb3bd; }
 
+/* Background atmosphere */
+.atmos { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.atmos-tile {
+  position: relative; display: grid; gap: 4px; place-items: center; text-align: center;
+  padding: 16px 8px; min-height: 104px; border-radius: 12px; cursor: pointer;
+  background: var(--black-2); border: 1px solid var(--line); color: var(--text); font: inherit; font-weight: 600;
+}
+.atmos-tile .ico { font-size: 2rem; line-height: 1; }
+.atmos-tile:hover { border-color: var(--purple-3); }
+.atmos-tile.on { border-color: var(--slime); box-shadow: 0 0 18px rgba(157, 255, 92, .25); }
+.atmos-tile.on::after { content: "● playing"; font-size: .7rem; color: var(--slime); font-weight: 600; }
+.atmos-tile.waiting::after { content: "waiting for active hours"; font-size: .7rem; color: var(--muted); font-weight: 500; }
+.atmos-tile .del { position: absolute; top: 4px; right: 6px; font-size: .8rem; opacity: 0; }
+.atmos-tile:hover .del { opacity: .7; }
+
 /* Denon */
 .denon-status { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 14px; }
 .denon-status .tag { padding: 4px 12px; border-radius: 999px; background: var(--black-2); border: 1px solid var(--line); font-size: .85rem; }

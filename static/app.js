@@ -41,11 +41,11 @@ function toast(msg) {
 
 // Merge a change into the config and save it shortly after (debounced)
 function save(patch) {
-  const { radio, denon: dn, ...rest } = patch;
+  const { radio, denon: dn, ambience, ...rest } = patch;
   Object.assign(cfg, rest);
   pending = { ...pending, ...rest };
   showSaved("Saving…");
-  for (const [k, v] of [["radio", radio], ["denon", dn]]) {
+  for (const [k, v] of [["radio", radio], ["denon", dn], ["ambience", ambience]]) {
     if (!v) continue;
     cfg[k] = { ...cfg[k], ...v };
     pending[k] = { ...(pending[k] || {}), ...v };
@@ -119,7 +119,7 @@ function renderPlacements() {
     const [nameIn, enabledIn] = card.querySelectorAll("input");
     const chSel = card.querySelector("select");
     const vol = card.querySelector("input[type=range]");
-    nameIn.oninput = () => { P().name = nameIn.value; savePlacements(); renderYard(); renderMatrix(true); renderRadioSpots(); };
+    nameIn.oninput = () => { P().name = nameIn.value; savePlacements(); renderYard(); renderMatrix(true); renderRadioSpots(); renderAtmosSettings(); };
     nameIn.onblur = () => { if (!nameIn.value.trim()) { nameIn.value = P().name = `Speaker ${i + 1}`; savePlacements(); renderYard(); } };
     nameIn.onkeydown = (e) => { if (e.key === "Enter") nameIn.blur(); };
     enabledIn.onchange = () => { P().enabled = enabledIn.checked; card.classList.toggle("off", !enabledIn.checked); savePlacements(); renderYard(); renderMatrix(true); };
@@ -248,6 +248,69 @@ async function playAt(id) {
   setTimeout(refresh, 150);
 }
 
+// ---------- Background atmosphere ----------
+
+const ATMOS_ICONS = [["grave", "🪦"], ["cemet", "🪦"], ["sewer", "🐀"], ["asylum", "🏚️"], ["ward", "🏚️"],
+  ["thunder", "⛈️"], ["storm", "⛈️"], ["rain", "🌧️"], ["forest", "🌲"], ["lab", "⚗️"], ["witch", "🧙"],
+  ["cauldron", "🧙"], ["wind", "🌬️"], ["swamp", "🐸"], ["crypt", "⚰️"], ["church", "⛪"]];
+const atmosIcon = (name) => (ATMOS_ICONS.find(([k]) => name.toLowerCase().includes(k)) || [, "👻"])[1];
+let atmosKey = "";
+
+function renderAtmos(force) {
+  const key = state.ambience.map((a) => a.name).join("|");
+  if (!force && key === atmosKey) return;
+  atmosKey = key;
+  const box = $("atmos");
+  if (!state.ambience.length) {
+    box.innerHTML = `<p class="muted">No background loops yet. Add one below.</p>`;
+    return;
+  }
+  box.innerHTML = state.ambience.map((a) =>
+    `<button class="atmos-tile" data-track="${esc(a.name)}"><span class="ico">${atmosIcon(a.name)}</span>${esc(a.label)}<span class="del" data-del="${esc(a.name)}" title="Remove">🗑</span></button>`).join("");
+  box.querySelectorAll(".atmos-tile").forEach((b) => (b.onclick = (e) => {
+    if (e.target.dataset.del) return removeAtmos(e.target.dataset.del);
+    const playingThis = cfg.ambience.on && cfg.ambience.track === b.dataset.track;
+    save({ ambience: playingThis ? { on: false } : { on: true, track: b.dataset.track } });
+    toast(playingThis ? "Atmosphere fading out" : `Atmosphere: ${b.textContent.replace("🗑", "").trim()}`);
+    updateAtmos();
+  }));
+  updateAtmos();
+}
+
+async function removeAtmos(name) {
+  if (!confirm(`Remove the background "${name}" from the Pi?`)) return;
+  await api("/api/sounds/" + encodeURIComponent(name) + "?kind=ambience", undefined, "DELETE");
+  refresh();
+}
+
+function renderAtmosSettings() {
+  setSlider("atmosVol", cfg.ambience.volume, true);
+  $("atmosHours").checked = cfg.ambience.active_hours_only;
+  const wrap = $("atmosSpots");
+  wrap.innerHTML = "";
+  cfg.placements.forEach((p) => {
+    const on = cfg.ambience.placements.includes(p.id);
+    const c = document.createElement("button");
+    c.className = "chip" + (on ? " on" : "");
+    c.textContent = p.name + (p.enabled ? "" : " (off)");
+    c.onclick = () => {
+      const list = on ? cfg.ambience.placements.filter((x) => x !== p.id) : [...cfg.ambience.placements, p.id];
+      save({ ambience: { placements: list } });
+      renderAtmosSettings();
+    };
+    wrap.appendChild(c);
+  });
+}
+
+function updateAtmos() {
+  const st = state.status.ambience || {};
+  document.querySelectorAll(".atmos-tile").forEach((b) => {
+    const chosen = cfg.ambience.on && cfg.ambience.track === b.dataset.track;
+    b.classList.toggle("on", chosen && st.playing === b.dataset.track);
+    b.classList.toggle("waiting", chosen && !st.want && st.playing !== b.dataset.track);
+  });
+}
+
 // ---------- Denon ----------
 
 const dB = (v) => (v > 0 ? "+" : "") + Number(v).toFixed(1) + " dB";
@@ -347,8 +410,10 @@ function updateLive() {
     now.textContent = `🔊 ${label} from the ${names}`;
     now.classList.add("on");
   } else {
-    now.textContent = radioOn ? `🎵 Radio: ${st.radio.name}` : "Quiet… for now.";
-    now.classList.toggle("on", radioOn);
+    const amb = st.ambience && st.ambience.playing;
+    const ambLabel = amb ? (state.ambience.find((a) => a.name === amb)?.label || amb) : "";
+    now.textContent = radioOn ? `🎵 Radio: ${st.radio.name}` : amb ? `${atmosIcon(amb)} Atmosphere: ${ambLabel}` : "Quiet… for now.";
+    now.classList.toggle("on", radioOn || !!amb);
   }
 
   const err = $("audioError");
@@ -392,10 +457,12 @@ async function refresh() {
   }
   if (!cfg) {
     cfg = state.config;
-    renderYard(); renderPlacements(); renderTiming(); renderRadioSettings(); renderMatrix(true); renderDenonSettings();
+    renderYard(); renderPlacements(); renderTiming(); renderRadioSettings(); renderMatrix(true); renderDenonSettings(); renderAtmos(true); renderAtmosSettings();
   } else {
     renderMatrix(false);
+    renderAtmos(false);
   }
+  updateAtmos();
   updateLive();
   updateDenon();
 }
@@ -450,6 +517,20 @@ function wire() {
   };
   $("denonAuto").onchange = () => save({ denon: { auto_power: $("denonAuto").checked } });
   $("denonHost").onchange = () => save({ denon: { host: $("denonHost").value.trim() } });
+
+  $("atmosVol").oninput = () => { setSlider("atmosVol", +$("atmosVol").value, true); save({ ambience: { volume: +$("atmosVol").value } }); };
+  $("atmosHours").onchange = () => save({ ambience: { active_hours_only: $("atmosHours").checked } });
+  $("atmosFile").onchange = async () => {
+    const files = $("atmosFile").files;
+    if (!files.length) return;
+    const fd = new FormData();
+    for (const f of files) fd.append("files", f);
+    toast(`Uploading ${files.length} background(s)…`);
+    const r = await (await fetch("/api/sounds?kind=ambience", { method: "POST", body: fd })).json();
+    toast(r.saved.length ? `Added ${r.saved.length} background(s)` : "No audio files in that upload");
+    $("atmosFile").value = "";
+    refresh();
+  };
 
   $("fileInput").onchange = async () => {
     const files = $("fileInput").files;

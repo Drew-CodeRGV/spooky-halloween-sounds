@@ -74,6 +74,7 @@ def stop():
     eng.stop_sounds()
     if (request.get_json(silent=True) or {}).get("radio"):
         eng.stop_radio()
+        eng.update_config({"ambience": {"on": False}})
     return ok()
 
 
@@ -92,10 +93,12 @@ def motion():
 @app.post("/api/sounds")
 def upload():
     saved = []
+    folder = engine.AMBIENCE_DIR if request.args.get("kind") == "ambience" else engine.SOUNDS_DIR
+    folder.mkdir(parents=True, exist_ok=True)
     for f in request.files.getlist("files"):
         name = secure_filename(f.filename or "")
         if name and os.path.splitext(name)[1].lower() in engine.EXTS:
-            f.save(engine.SOUNDS_DIR / name)
+            f.save(folder / name)
             saved.append(name)
     eng.refresh_sounds()
     eng.add_log(f"Added {', '.join(saved)}" if saved else "Upload had no audio files")
@@ -104,10 +107,13 @@ def upload():
 
 @app.delete("/api/sounds/<name>")
 def delete_sound(name):
-    path = engine.SOUNDS_DIR / secure_filename(name)
+    folder = engine.AMBIENCE_DIR if request.args.get("kind") == "ambience" else engine.SOUNDS_DIR
+    path = folder / secure_filename(name)
     if path.exists() and path.suffix.lower() in engine.EXTS:
         path.unlink()
         eng.refresh_sounds()
+        if eng.config["ambience"]["track"] == name:
+            eng.update_config({"ambience": {"on": False}})
         eng.add_log(f"Removed {name}")
     return ok()
 

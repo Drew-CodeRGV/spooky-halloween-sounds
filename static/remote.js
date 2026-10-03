@@ -52,10 +52,16 @@ async function setConfig(patch) {
   refresh();
 }
 
+const ATMOS_ICONS = [["grave", "🪦"], ["cemet", "🪦"], ["sewer", "🐀"], ["asylum", "🏚️"], ["ward", "🏚️"],
+  ["thunder", "⛈️"], ["storm", "⛈️"], ["rain", "🌧️"], ["forest", "🌲"], ["lab", "⚗️"], ["witch", "🧙"],
+  ["cauldron", "🧙"], ["wind", "🌬️"], ["swamp", "🐸"], ["crypt", "⚰️"], ["church", "⛪"]];
+const atmosIcon = (name) => (ATMOS_ICONS.find(([k]) => name.toLowerCase().includes(k)) || [, "👻"])[1];
+
 // ---------- rendering ----------
 function renderLayout() {
   const cfg = state.config;
-  const key = JSON.stringify([cfg.placements.map((p) => [p.name, p.enabled]), state.sounds.map((s) => s.name)]);
+  const key = JSON.stringify([cfg.placements.map((p) => [p.name, p.enabled]), state.sounds.map((s) => s.name),
+    state.ambience.map((a) => a.name)]);
   if (key === layoutKey) return;
   layoutKey = key;
 
@@ -68,6 +74,15 @@ function renderLayout() {
   target.innerHTML = `<option value="">Random speaker</option>` +
     cfg.placements.filter((p) => p.enabled).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join("");
   target.value = [...target.options].some((o) => o.value === keep) ? keep : "";
+
+  $("atmos").innerHTML = state.ambience.map((a) =>
+    `<button class="atmos-tile" data-track="${esc(a.name)}"><span class="ico">${atmosIcon(a.name)}</span>${esc(a.label)}</button>`).join("");
+  $("atmos").querySelectorAll("[data-track]").forEach((b) => (b.onclick = () => {
+    buzz();
+    const am = state.config.ambience;
+    const playingThis = am.on && am.track === b.dataset.track;
+    setConfig({ ambience: playingThis ? { on: false } : { on: true, track: b.dataset.track } });
+  }));
 
   $("sounds").innerHTML = state.sounds.length
     ? state.sounds.map((s) => `<button class="btn r-sound" data-sound="${esc(s.name)}">▶ ${esc(s.label)}</button>`).join("")
@@ -108,6 +123,15 @@ function renderLive() {
   if (document.activeElement !== $("master")) $("master").value = cfg.master_volume;
   $("masterOut").textContent = Math.round(cfg.master_volume * 100) + "%";
 
+  const amb = st.ambience || {};
+  document.querySelectorAll(".atmos-tile").forEach((b) => {
+    const chosen = cfg.ambience.on && cfg.ambience.track === b.dataset.track;
+    b.classList.toggle("on", chosen && amb.playing === b.dataset.track);
+    b.classList.toggle("waiting", chosen && !amb.want && amb.playing !== b.dataset.track);
+  });
+  if (document.activeElement !== $("atmosVol")) $("atmosVol").value = cfg.ambience.volume;
+  $("atmosVolOut").textContent = Math.round(cfg.ambience.volume * 100) + "%";
+
   const radio = $("radio");
   if (radioOn) {
     radio.innerHTML = `<div class="r-row"><div class="now on" style="grid-column:1/-1;margin:0">🎵 ${esc(st.radio.name)}${st.radio.buffering ? " (tuning in…)" : ""}</div>
@@ -147,6 +171,8 @@ $("stopBtn").onclick = stopAll;
 document.querySelectorAll("#mode button").forEach((b) => (b.onclick = () => { buzz(); setConfig({ mode: b.dataset.mode }); }));
 $("master").oninput = () => { $("masterOut").textContent = Math.round($("master").value * 100) + "%"; };
 $("master").onchange = () => setConfig({ master_volume: +$("master").value });
+$("atmosVol").oninput = () => { $("atmosVolOut").textContent = Math.round($("atmosVol").value * 100) + "%"; };
+$("atmosVol").onchange = () => setConfig({ ambience: { volume: +$("atmosVol").value } });
 document.querySelectorAll("[data-denon]").forEach((b) => (b.onclick = () => denon(b.dataset.denon, b.dataset.value)));
 
 // Home-screen shortcuts: /remote?do=scare or ?do=stop

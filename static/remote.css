@@ -46,5 +46,9 @@ body.remote {
 .r-sound { padding: 14px 10px; justify-content: flex-start; text-align: left; min-height: 56px; }
 .r-sound.playing { border-color: var(--pumpkin); color: var(--pumpkin); }
 
+.r-atmos { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); margin-bottom: 8px; }
+.r-atmos .atmos-tile { min-height: 84px; padding: 10px 6px; font-size: .85rem; }
+.r-atmos .atmos-tile .ico { font-size: 1.6rem; }
+
 .r-link { display: block; text-align: center; color: var(--muted); padding: 8px; text-decoration: none; }
 .r-link:hover { color: var(--text); }

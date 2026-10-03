@@ -6,6 +6,7 @@ A Raspberry Pi 4 that hides creepy sounds around your yard. When someone walks b
 - **Motion sensor**, **automatic timer**, or both
 - Another speaker can "answer" a sound, and a sound can "creep" from speaker to speaker
 - Choose which sounds play from which speaker, upload your own sounds, and set active hours
+- **Background atmospheres** that loop quietly underneath the scares (graveyard, sewer, abandoned asylum, thunderstorm, haunted forest, mad scientist lab, witch's cauldron)
 - **Halloween radio** from the free radio-browser.info directory, which can replace the spooky sounds while it plays
 - **Denon controls** on the dashboard: power, input, sound mode, volume (with a safety limit), and automatic on/off with your active hours
 
@@ -64,7 +65,14 @@ Set the sensor's jumper to "single trigger". The two knobs adjust sensitivity an
 5. **Halloween Radio:** search or tap a tag, then press Play. Choose which speakers the radio plays on. With "Radio replaces the spooky sounds" on, scares pause while the radio plays.
 
 ## Sounds
-Upload sounds from the dashboard, or copy `.wav`, `.mp3`, `.ogg`, `.flac` or `.m4a` files into `sounds/`.
+The repo comes with original sounds, all made from scratch by `make_spooky_sounds.py`, so they're free to use and share:
+
+- **Scares** (`sounds/`): monster roar, zombie groan, wolf howl, ghost wail, evil whisper, witch cackle, door creak, chains rattle, bell toll, thunder crack, knock knock, crow caws, plus the starter growls, heartbeat, breathing and moan.
+- **Background atmospheres** (`sounds/ambience/`): 60-second seamless loops of a graveyard, sewer, abandoned asylum, thunderstorm, haunted forest, mad scientist lab and witch's cauldron.
+
+Add your own from the dashboard: **Add sounds** for scares, **Add background** for loops. Or copy `.wav`, `.mp3`, `.ogg`, `.flac` or `.m4a` files into `sounds/` or `sounds/ambience/`. Any recording works as a background loop, because the Pi blends its end into its start.
+
+Sounds you upload stay on the Pi. Only add files to this repo if you're allowed to share them.
 
 Free sources:
 - **freesound.org**: search "growl", "dog bark distant", "wolf howl", "creepy whisper", "chains", "branch snap". Filter by the **CC0** license.
@@ -93,7 +101,8 @@ Pandora doesn't let other devices play its stations without a paid account and l
 - `engine.py`: the audio engine (always-on 7.1 mixer to HDMI), scare scheduler, motion sensor and radio
 - `static/`: dashboard (`index.html`), phone remote (`remote.html`), app manifest, service worker, icons
 - `make_icons.py`: draws the app icons
-- `make_placeholder_sounds.py`: makes the starter sounds
+- `make_spooky_sounds.py`: synthesizes the scare sounds and background loops
+- `make_placeholder_sounds.py`: makes the starter growls, heartbeat, breathing and moan
 - `config.json`: your settings (created on the Pi, not in git)
 
 To try the dashboard on a laptop: `pip install flask numpy` and then `SPOOKY_PORT=8080 python3 app.py`. On a laptop it runs without making sound.
