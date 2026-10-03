@@ -8,6 +8,7 @@ import collections
 import copy
 import datetime
 import json
+import os
 import random
 import shutil
 import subprocess
@@ -124,10 +125,27 @@ def load_config():
     return sanitize(cfg)
 
 
+def write_safely(path, data):
+    """Write to a temp file, flush it to the SD card, then swap it in.
+
+    If the power dies mid-write, the old file is still there instead of an empty one.
+    """
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    with open(tmp, "wb") as f:
+        f.write(data)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+    fd = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(fd)  # make the rename itself stick
+    finally:
+        os.close(fd)
+
+
 def save_config(cfg):
-    tmp = CONFIG_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(cfg, indent=2))
-    tmp.replace(CONFIG_PATH)
+    write_safely(CONFIG_PATH, json.dumps(cfg, indent=2).encode())
 
 
 # ---- Decoding ----------------------------------------------------------------

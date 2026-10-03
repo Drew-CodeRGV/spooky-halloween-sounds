@@ -41,7 +41,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -y
 apt-get install -y --no-install-recommends \
   git python3 python3-numpy python3-flask python3-gpiozero \
-  ffmpeg alsa-utils avahi-daemon ca-certificates curl dnsmasq-base
+  ffmpeg alsa-utils avahi-daemon ca-certificates curl dnsmasq-base rsync
 # GPIO backend for the motion sensor (name varies a little between OS releases)
 apt-get install -y --no-install-recommends python3-lgpio || apt-get install -y python3-rpi-lgpio || true
 
@@ -71,9 +71,20 @@ if ! ls "$APP_DIR"/sounds/*.* >/dev/null 2>&1; then
   sudo -u "$RUN_USER" python3 "$APP_DIR/make_placeholder_sounds.py"
 fi
 
-# ---- 5. HDMI ---------------------------------------------------------------------------
-# (No forced HDMI mode: with the Denon connected, the Pi's HDMI audio works without it.)
+# ---- 5. Survive power cuts --------------------------------------------------------------
+# Out in the yard the power can drop at any moment. Two safety nets:
+#  - the SD card's filesystem is checked and repaired automatically at boot
+#  - the app checks itself before every start and restores damaged files from the
+#    last known-good copy (see selfheal.sh)
 NEED_REBOOT=0
+CMDLINE=/boot/firmware/cmdline.txt
+[[ -f $CMDLINE ]] || CMDLINE=/boot/cmdline.txt
+if [[ -f $CMDLINE ]] && ! grep -q "fsck.repair=yes" "$CMDLINE"; then
+  say "Turning on automatic SD card repair at boot"
+  cp "$CMDLINE" "$CMDLINE.spooky-backup"
+  sed -i '1 s/$/ fsck.repair=yes/' "$CMDLINE"
+fi
+install -m 755 "$APP_DIR/selfheal.sh" /usr/local/bin/spooky-selfheal
 
 # ---- 6. Network name: http://spooky.local ----------------------------------------------
 if [[ -n "$SPOOKY_HOSTNAME" && "$(hostname)" != "$SPOOKY_HOSTNAME" ]]; then
@@ -183,6 +194,7 @@ User=$RUN_USER
 WorkingDirectory=$APP_DIR
 Environment=SPOOKY_PORT=$SPOOKY_PORT
 Environment=PYTHONUNBUFFERED=1
+ExecStartPre=-/usr/local/bin/spooky-selfheal $APP_DIR
 ExecStart=/usr/bin/python3 $APP_DIR/app.py
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 Restart=always

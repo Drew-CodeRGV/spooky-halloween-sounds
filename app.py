@@ -98,7 +98,7 @@ def upload():
     for f in request.files.getlist("files"):
         name = secure_filename(f.filename or "")
         if name and os.path.splitext(name)[1].lower() in engine.EXTS:
-            f.save(folder / name)
+            engine.write_safely(folder / name, f.read())
             saved.append(name)
     eng.refresh_sounds()
     eng.add_log(f"Added {', '.join(saved)}" if saved else "Upload had no audio files")
