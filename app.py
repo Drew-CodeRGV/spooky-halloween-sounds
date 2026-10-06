@@ -42,6 +42,12 @@ def service_worker():
     return resp
 
 
+@app.get("/sounds/<path:name>")
+def sound_file(name):
+    """The raw audio file, so the dashboard can preview it on your own computer or phone."""
+    return send_from_directory(engine.SOUNDS_DIR, name, conditional=True)
+
+
 @app.get("/api/state")
 def state():
     s = eng.state()

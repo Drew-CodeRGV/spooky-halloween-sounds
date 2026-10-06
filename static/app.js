@@ -184,7 +184,7 @@ function renderMatrix(force) {
     const cells = cfg.placements.map((p) =>
       `<td><input type="checkbox" data-sound="${esc(s.name)}" data-id="${p.id}" ${p.muted_sounds.includes(s.name) ? "" : "checked"} aria-label="${esc(s.label)} on ${esc(p.name)}"></td>`).join("");
     return `<tr data-sound="${esc(s.name)}" class="${isOff(s.name) ? "sound-off" : ""}">
-      <td class="name"><button class="icon-btn" data-play="${esc(s.name)}" title="Play now">▶</button>${esc(s.label)}<small>${s.seconds}s</small></td>
+      <td class="name"><button class="icon-btn" data-play="${esc(s.name)}" title="Play in the yard">▶</button><button class="icon-btn preview-btn" data-preview="${esc(s.name)}" title="Preview on this device (not in the yard)">🎧</button>${esc(s.label)}<small>${s.seconds}s</small></td>
       <td class="onoff"><label class="switch" title="Turn this sound on or off everywhere"><input type="checkbox" data-onoff="${esc(s.name)}" ${isOff(s.name) ? "" : "checked"}><span></span></label></td>
       <td class="onoff"><label class="switch sweep" title="Always sweep this sound across the whole yard"><input type="checkbox" data-sweep="${esc(s.name)}" ${sweeps(s.name) ? "checked" : ""}><span></span></label></td>
       ${cells}
@@ -214,6 +214,8 @@ function renderMatrix(force) {
       savePlacements();
     };
   });
+  t.querySelectorAll("[data-preview]").forEach((b) => (b.onclick = () => preview(b.dataset.preview)));
+  markPreview();
   t.querySelectorAll("[data-play]").forEach((b) => (b.onclick = async () => {
     const r = await api("/api/play", { sound: b.dataset.play });
     if (!r.ok) toast(r.error);
@@ -323,6 +325,34 @@ async function playAt(id) {
   setTimeout(refresh, 150);
 }
 
+// ---------- Preview on this device ----------
+// Plays the file through this computer's or phone's own speakers, not the yard's.
+
+let previewAudio = null;
+let previewName = null;
+
+function preview(name) {
+  const same = previewName === name;
+  stopPreview();
+  if (same) return;  // second tap stops it
+  previewName = name;
+  previewAudio = new Audio("/sounds/" + name.split("/").map(encodeURIComponent).join("/"));
+  previewAudio.onended = stopPreview;
+  previewAudio.play().catch(() => { toast("This browser couldn't play that file"); stopPreview(); });
+  toast("🎧 Previewing on this device. Tap 🎧 again to stop.");
+  markPreview();
+}
+
+function stopPreview() {
+  if (previewAudio) { previewAudio.pause(); previewAudio = null; }
+  previewName = null;
+  markPreview();
+}
+
+function markPreview() {
+  document.querySelectorAll("[data-preview]").forEach((b) => b.classList.toggle("previewing", b.dataset.preview === previewName));
+}
+
 // ---------- Background atmosphere ----------
 
 const ATMOS_ICONS = [["grave", "🪦"], ["cemet", "🪦"], ["sewer", "🐀"], ["asylum", "🏚️"], ["ward", "🏚️"],
@@ -341,15 +371,17 @@ function renderAtmos(force) {
     return;
   }
   box.innerHTML = state.ambience.map((a) =>
-    `<button class="atmos-tile" data-track="${esc(a.name)}"><span class="ico">${atmosIcon(a.name)}</span>${esc(a.label)}<span class="del" data-del="${esc(a.name)}" title="Remove">🗑</span></button>`).join("");
+    `<button class="atmos-tile" data-track="${esc(a.name)}"><span class="ico">${atmosIcon(a.name)}</span>${esc(a.label)}<span class="del" data-del="${esc(a.name)}" title="Remove">🗑</span><span class="pv preview-btn" data-preview="ambience/${esc(a.name)}" title="Preview on this device (not in the yard)">🎧</span></button>`).join("");
   box.querySelectorAll(".atmos-tile").forEach((b) => (b.onclick = (e) => {
     if (e.target.dataset.del) return removeAtmos(e.target.dataset.del);
+    if (e.target.dataset.preview) return preview(e.target.dataset.preview);
     const playingThis = cfg.ambience.on && cfg.ambience.track === b.dataset.track;
     save({ ambience: playingThis ? { on: false } : { on: true, track: b.dataset.track } });
     toast(playingThis ? "Atmosphere fading out" : `Atmosphere: ${b.textContent.replace("🗑", "").trim()}`);
     updateAtmos();
   }));
   updateAtmos();
+  markPreview();
 }
 
 async function removeAtmos(name) {
