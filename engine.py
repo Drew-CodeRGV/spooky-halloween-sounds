@@ -53,6 +53,7 @@ DEFAULT_CONFIG = {
     "active_start": "17:00",
     "active_end": "23:00",
     "pir_pin": 17,
+    "disabled_sounds": [],            # sounds switched off everywhere (still playable by hand)
     "placements": [
         {"id": f"p{i + 1}", "name": name, "terminal": term, "channel": ch,
          "enabled": i < 2, "volume": 1.0, "muted_sounds": []}
@@ -87,6 +88,7 @@ def sanitize(cfg):
     for k in ("answer_chance", "creep_chance"):
         cfg[k] = _num(cfg.get(k), 0, 1, d[k])
     cfg["active_hours_enabled"] = bool(cfg.get("active_hours_enabled"))
+    cfg["disabled_sounds"] = [str(x) for x in (cfg.get("disabled_sounds") or [])]
     by_id = {p.get("id"): p for p in cfg.get("placements", [])}
     placements = []
     for default in d["placements"]:
@@ -544,8 +546,10 @@ class Engine:
         with self.lock:
             self.sounds = found
 
-    def allowed(self, placement):
-        return [s for s in self.sounds if s not in placement["muted_sounds"]]
+    def allowed(self, placement, include_off=False):
+        """Sounds this speaker may play. Sounds switched off entirely are left out unless include_off."""
+        off = () if include_off else self.config["disabled_sounds"]
+        return [s for s in self.sounds if s not in placement["muted_sounds"] and s not in off]
 
     def placement(self, pid):
         return next((p for p in self.config["placements"] if p["id"] == pid), None)
@@ -698,7 +702,7 @@ class Engine:
         if placement_id:
             spot = self.placement(placement_id)
         else:
-            choices = [p for p in cfg["placements"] if p["enabled"] and (sound in self.allowed(p) if sound else self.allowed(p))]
+            choices = [p for p in cfg["placements"] if p["enabled"] and (sound in self.allowed(p, include_off=True) if sound else self.allowed(p))]
             spot = random.choice(choices) if choices else None
         if spot is None:
             return "No speaker available for that sound"
