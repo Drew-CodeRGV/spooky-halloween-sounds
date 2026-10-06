@@ -40,6 +40,9 @@ TERMINALS = [
     ("Surround R", 7), ("Surr. Back L", 2), ("Surr. Back R", 3),
 ]
 YARD_NAMES = ["Bushes", "Big Tree", "Porch", "Mailbox", "Driveway", "Side Gate", "Garage"]
+# Where each speaker starts on the dashboard's yard map (percent across, percent down).
+# Drag them on the map; left-to-right on the map is the order sweeps and creeps travel.
+MAP_SPOTS = [(9, 58), (25, 38), (50, 52), (75, 38), (91, 58), (22, 78), (78, 78)]
 
 DEFAULT_CONFIG = {
     "audio_device": "hdmi:CARD=vc4hdmi0,DEV=0",
@@ -49,6 +52,8 @@ DEFAULT_CONFIG = {
     "cooldown_min": 10, "cooldown_max": 25,  # silence after a motion scare
     "answer_chance": 0.45,
     "creep_chance": 0.15,
+    "sweep_seconds": 8,               # how long a full-yard sweep takes
+    "sweep_sound": "",                # "" = random
     "active_hours_enabled": True,
     "active_start": "17:00",
     "active_end": "23:00",
@@ -56,7 +61,7 @@ DEFAULT_CONFIG = {
     "disabled_sounds": [],            # sounds switched off everywhere (still playable by hand)
     "placements": [
         {"id": f"p{i + 1}", "name": name, "terminal": term, "channel": ch,
-         "enabled": i < 2, "volume": 1.0, "muted_sounds": []}
+         "enabled": i < 2, "volume": 1.0, "muted_sounds": [], "x": MAP_SPOTS[i][0], "y": MAP_SPOTS[i][1]}
         for i, (name, (term, ch)) in enumerate(zip(YARD_NAMES, TERMINALS))
     ],
     "radio": {"volume": 0.5, "placements": ["p1", "p2"], "override": True, "autoplay": False,
@@ -85,6 +90,8 @@ def sanitize(cfg):
     for lo, hi in (("auto_min", "auto_max"), ("cooldown_min", "cooldown_max")):
         a, b = _num(cfg.get(lo), 1, 86400, d[lo]), _num(cfg.get(hi), 1, 86400, d[hi])
         cfg[lo], cfg[hi] = min(a, b), max(a, b)
+    cfg["sweep_seconds"] = _num(cfg.get("sweep_seconds"), 2, 60, d["sweep_seconds"])
+    cfg["sweep_sound"] = str(cfg.get("sweep_sound") or "")
     for k in ("answer_chance", "creep_chance"):
         cfg[k] = _num(cfg.get(k), 0, 1, d[k])
     cfg["active_hours_enabled"] = bool(cfg.get("active_hours_enabled"))
@@ -98,6 +105,8 @@ def sanitize(cfg):
         p["enabled"] = bool(p["enabled"])
         p["name"] = str(p["name"])[:30] or default["name"]
         p["muted_sounds"] = list(p.get("muted_sounds") or [])
+        p["x"] = _num(p.get("x"), 3, 97, default["x"])
+        p["y"] = _num(p.get("y"), 5, 92, default["y"])
         placements.append(p)
     cfg["placements"] = placements
     cfg["radio"] = {**d["radio"], **cfg.get("radio", {})}
@@ -207,6 +216,11 @@ def render(mono, gains):
     return buf
 
 
+def yard_order(placements):
+    """Left to right as arranged on the dashboard's yard map."""
+    return sorted(placements, key=lambda p: (p["x"], p["y"]))
+
+
 def creep_gains(n_samples, spots):
     """Equal-power crossfade along a list of placements, e.g. Bushes -> Big Tree -> Porch."""
     pos = np.linspace(0, len(spots) - 1, n_samples)
@@ -216,6 +230,23 @@ def creep_gains(n_samples, spots):
         g = np.where(d < 1, np.cos(d * np.pi / 2), 0.0) * p["volume"]
         gains[p["channel"]] = gains.get(p["channel"], 0) + g
     return gains
+
+
+def stretch(mono, n, fade=0.4):
+    """Repeat a sound with short crossfades until it's n samples long, then fade the end."""
+    if len(mono) >= n:
+        out = mono[:n].copy()
+    else:
+        f = min(int(fade * RATE), len(mono) // 3)
+        ramp = np.linspace(0, 1, f, dtype=np.float32)
+        out = mono.copy()
+        while len(out) < n:
+            out[-f:] = out[-f:] * (1 - ramp) + mono[:f] * ramp
+            out = np.concatenate([out, mono[f:]])
+        out = out[:n]
+    tail = min(int(0.6 * RATE), n // 4)
+    out[-tail:] *= np.linspace(1, 0, tail, dtype=np.float32)
+    return out
 
 
 def beep_sound():
@@ -635,7 +666,8 @@ class Engine:
             for p in spots:
                 gains[p["channel"]] = gains.get(p["channel"], 0) + p["volume"]
         v = self._add_voice(render(mono, gains))
-        self.now_playing = {"sound": sound, "spots": [p["id"] for p in spots], "voice": v}
+        self.now_playing = {"sound": sound, "spots": [p["id"] for p in spots], "voice": v,
+                            "sweep": creep, "samples": len(mono)}
         names = " → ".join(p["name"] for p in spots) if creep else spots[0]["name"]
         self.add_log(f"{Path(sound).stem} {'creeping ' if creep else 'from the '}{names}")
         return v
@@ -662,7 +694,7 @@ class Engine:
     def _scare(self, reason):
         cfg = copy.deepcopy(self.config)
         gen = self.stop_gen
-        spots = [p for p in cfg["placements"] if p["enabled"] and self.allowed(p)]
+        spots = yard_order([p for p in cfg["placements"] if p["enabled"] and self.allowed(p)])
         if not spots:
             self.add_log("Nothing to play: turn on a speaker and give it some sounds")
             return
@@ -710,6 +742,31 @@ class Engine:
         if not pool or pool[0] not in self.sounds:
             return "No sounds loaded"
         self._play(random.choice(pool), [spot])
+        return None
+
+    def sweep(self, direction="ltr", sound=None, seconds=None):
+        """Send one sound across every speaker that's on, end to end. Returns an error or None."""
+        cfg = self.config
+        spots = yard_order([p for p in cfg["placements"] if p["enabled"]])
+        if len(spots) < 2:
+            return "Turn on at least two speakers to sweep across."
+        if direction == "rtl":
+            spots = spots[::-1]
+        sound = sound or cfg["sweep_sound"]
+        if sound and sound not in self.sounds:
+            sound = ""
+        pool = [sound] if sound else [s for s in self.sounds if s not in cfg["disabled_sounds"]] or list(self.sounds)
+        if not pool:
+            return "No sounds loaded"
+        sound = random.choice(pool)
+        n = int(float(seconds or cfg["sweep_seconds"]) * RATE)
+        mono = stretch(self.sounds[sound], n)
+        self.stop_sounds()
+        gains = creep_gains(len(mono), spots)
+        v = self._add_voice(render(mono, gains))
+        self.now_playing = {"sound": sound, "spots": [p["id"] for p in spots], "voice": v,
+                            "sweep": True, "samples": len(mono)}
+        self.add_log(f"{Path(sound).stem} sweeping {spots[0]['name']} → {spots[-1]['name']}")
         return None
 
     def beep(self, channel):
@@ -880,7 +937,11 @@ class Engine:
         cfg = self.config
         now = time.time()
         cur = self.now_playing
-        np_ = {"sound": cur["sound"], "spots": cur["spots"]} if cur and not cur["voice"]["done"].is_set() else None
+        np_ = None
+        if cur and not cur["voice"]["done"].is_set():
+            np_ = {"sound": cur["sound"], "spots": cur["spots"]}
+            if cur.get("sweep"):  # how far along the yard it is, 0..1, so the map can follow it
+                np_["progress"] = round(min(1.0, cur["voice"]["pos"] / max(1, cur["samples"])), 3)
         return {
             "config": cfg,
             "ambience": self.ambience_tracks(),

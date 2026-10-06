@@ -35,6 +35,14 @@
       <button class="btn big" id="motionBtn">🚶 Pretend someone walked by</button>
       <button class="btn big danger" id="stopBtn">⏹ Stop everything</button>
     </div>
+    <div class="sweep-row">
+      <button class="btn big" id="sweepRtl" title="One sound travels across every speaker, last to first">⟵ Sweep</button>
+      <div class="sweep-opts">
+        <label class="slider-row"><span>Sweep takes</span><input type="range" id="sweepSecs" min="2" max="30" step="1"><output id="sweepSecsOut"></output></label>
+        <label class="field sweep-sound">Sound <select id="sweepSound"></select></label>
+      </div>
+      <button class="btn big" id="sweepLtr" title="One sound travels across every speaker, first to last">Sweep ⟶</button>
+    </div>
     <div class="now" id="nowPlaying">Quiet… for now.</div>
     <div id="audioError" class="alert hidden"></div>
     <label class="slider-row">
@@ -47,11 +55,12 @@
   <!-- Yard map -->
   <section class="panel">
     <h2>The Yard</h2>
-    <p class="hint">Tap a speaker to play a random sound there. Glowing = playing now. 🎵 = radio.</p>
+    <p class="hint"><b>Drag</b> each speaker to where it really is in your yard. <b>Tap</b> one to play a sound there. Glowing = playing now. 🎵 = radio. Sweeps and creeps travel left to right across this map.</p>
     <div class="yard" id="yard">
       <div class="house"><div class="roof"></div><div class="door"></div><span>House</span></div>
       <div class="sidewalk">sidewalk · trick-or-treaters walk here</div>
     </div>
+    <p class="muted small" id="sweepOrder"></p>
   </section>
 
   <!-- Denon -->

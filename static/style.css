@@ -137,7 +137,8 @@ legend { padding: 0 6px; color: var(--muted); font-weight: 600; font-size: .85re
 .sidewalk { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: #2b2730;
   border-top: 2px solid #3a3540; color: #7d7488; font-size: .75rem; display: grid; place-items: center; letter-spacing: 1px; }
 .spot {
-  position: absolute; transform: translate(-50%, -50%); width: 92px; text-align: center; cursor: pointer;
+  position: absolute; transform: translate(-50%, -50%); width: 92px; text-align: center; cursor: grab;
+  touch-action: none; user-select: none; -webkit-user-select: none;
   background: none; border: 0; color: var(--text); font: inherit; padding: 0;
 }
 .spot .dot {
@@ -147,6 +148,8 @@ legend { padding: 0 6px; color: var(--muted); font-weight: 600; font-size: .85re
 }
 .spot .label { font-size: .78rem; line-height: 1.2; text-shadow: 0 1px 2px #000; }
 .spot.off { opacity: .35; }
+.spot.dragging { cursor: grabbing; z-index: 5; }
+.spot.dragging .dot { border-color: var(--slime); box-shadow: 0 0 16px rgba(157, 255, 92, .5); }
 .spot.playing .dot { border-color: var(--pumpkin); color: var(--pumpkin); animation: glow 0.9s ease-in-out infinite alternate; }
 .spot.radio .dot::after { content: "🎵"; position: absolute; font-size: .8rem; transform: translate(18px, -18px); }
 @keyframes glow { from { box-shadow: 0 0 8px var(--pumpkin); } to { box-shadow: 0 0 28px 6px var(--pumpkin); } }
@@ -211,6 +214,16 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 600; margin
 .save-state { font-size: .82rem; color: var(--slime); opacity: 0; transition: opacity .3s; }
 .save-state.show { opacity: 1; }
 .save-state.bad { color: #ffb3bd; }
+
+/* Sweep */
+.sweep-row { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; margin-top: 12px; }
+.sweep-row .btn.big { flex: none; min-width: 120px; }
+.sweep-opts { display: grid; gap: 4px; min-width: 0; }
+.sweep-sound { grid-template-columns: auto 1fr; align-items: center; margin: 0; }
+@media (max-width: 600px) {
+  .sweep-row { grid-template-columns: 1fr 1fr; }
+  .sweep-opts { grid-column: 1 / -1; grid-row: 1; }
+}
 
 /* Background atmosphere */
 .atmos { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }

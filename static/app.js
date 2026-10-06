@@ -9,10 +9,6 @@ let saveTimer = null;
 let pending = {};
 
 // Yard map positions (percent), one per placement, in sidewalk order
-const SPOTS = [
-  { x: 9, y: 58 }, { x: 25, y: 38 }, { x: 50, y: 52 }, { x: 75, y: 38 },
-  { x: 91, y: 58 }, { x: 22, y: 78 }, { x: 78, y: 78 },
-];
 const MODE_HINTS = {
   off: "Nothing plays on its own. The buttons on this page still work.",
   motion: "A sound plays when the motion sensor sees someone walk by.",
@@ -81,14 +77,55 @@ function renderYard() {
     const b = document.createElement("button");
     b.className = "spot";
     b.dataset.id = p.id;
-    b.style.left = SPOTS[i].x + "%";
-    b.style.top = SPOTS[i].y + "%";
-    b.title = p.enabled ? `Play a sound from the ${p.name}` : `${p.name} is turned off`;
+    b.style.left = p.x + "%";
+    b.style.top = p.y + "%";
+    b.title = (p.enabled ? `Tap to play a sound from the ${p.name}` : `${p.name} is turned off`) + ". Drag to move it.";
     b.innerHTML = `<div class="dot">${i + 1}</div><div class="label">${esc(p.name)}</div>`;
-    b.onclick = () => playAt(p.id);
+    makeDraggable(b, p.id);
     yard.appendChild(b);
   });
   updateLive();
+}
+
+// Drag a speaker around the yard map; a tap without moving plays a sound there.
+function makeDraggable(el, id) {
+  let start = null;
+  el.addEventListener("pointerdown", (e) => {
+    start = { x: e.clientX, y: e.clientY, moved: false };
+    el.setPointerCapture(e.pointerId);
+  });
+  el.addEventListener("pointermove", (e) => {
+    if (!start) return;
+    if (!start.moved && Math.hypot(e.clientX - start.x, e.clientY - start.y) < 6) return;
+    start.moved = true;
+    el.classList.add("dragging");
+    const box = $("yard").getBoundingClientRect();
+    const x = Math.min(97, Math.max(3, ((e.clientX - box.left) / box.width) * 100));
+    const y = Math.min(92, Math.max(5, ((e.clientY - box.top) / box.height) * 100));
+    el.style.left = x + "%";
+    el.style.top = y + "%";
+    Object.assign(cfg.placements.find((p) => p.id === id), { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 });
+  });
+  const end = () => {
+    if (!start) return;
+    const moved = start.moved;
+    start = null;
+    el.classList.remove("dragging");
+    if (moved) {
+      savePlacements();
+      renderSweepOrder();
+    } else {
+      playAt(id);
+    }
+  };
+  el.addEventListener("pointerup", end);
+  el.addEventListener("pointercancel", end);
+}
+
+// Show the left-to-right order sweeps will travel
+function renderSweepOrder() {
+  const on = cfg.placements.filter((p) => p.enabled).sort((a, b) => a.x - b.x || a.y - b.y);
+  $("sweepOrder").textContent = on.length > 1 ? "Sweep order: " + on.map((p) => p.name).join(" → ") : "";
 }
 
 function renderPlacements() {
@@ -119,10 +156,10 @@ function renderPlacements() {
     const [nameIn, enabledIn] = card.querySelectorAll("input");
     const chSel = card.querySelector("select");
     const vol = card.querySelector("input[type=range]");
-    nameIn.oninput = () => { P().name = nameIn.value; savePlacements(); renderYard(); renderMatrix(true); renderRadioSpots(); renderAtmosSettings(); };
+    nameIn.oninput = () => { P().name = nameIn.value; savePlacements(); renderYard(); renderMatrix(true); renderRadioSpots(); renderAtmosSettings(); renderSweepOrder(); };
     nameIn.onblur = () => { if (!nameIn.value.trim()) { nameIn.value = P().name = `Speaker ${i + 1}`; savePlacements(); renderYard(); } };
     nameIn.onkeydown = (e) => { if (e.key === "Enter") nameIn.blur(); };
-    enabledIn.onchange = () => { P().enabled = enabledIn.checked; card.classList.toggle("off", !enabledIn.checked); savePlacements(); renderYard(); renderMatrix(true); };
+    enabledIn.onchange = () => { P().enabled = enabledIn.checked; card.classList.toggle("off", !enabledIn.checked); savePlacements(); renderYard(); renderMatrix(true); renderSweepOrder(); };
     chSel.onchange = () => { P().channel = +chSel.value; savePlacements(); };
     vol.oninput = () => { P().volume = +vol.value; card.querySelector("output").textContent = Math.round(vol.value * 100) + "%"; savePlacements(); };
     card.querySelector("[data-act=beep]").onclick = () => { const ch = P().channel; api("/api/beep", { channel: ch }); toast(`Beeping HDMI channel ${ch}: listen for 3 beeps`); };
@@ -177,6 +214,25 @@ function renderMatrix(force) {
     await api("/api/sounds/" + encodeURIComponent(b.dataset.del), undefined, "DELETE");
     refresh();
   }));
+}
+
+function renderSweep() {
+  setSweepSecs(cfg.sweep_seconds);
+  const sel = $("sweepSound");
+  sel.innerHTML = `<option value="">Random</option>` +
+    state.sounds.map((s) => `<option value="${esc(s.name)}">${esc(s.label)}</option>`).join("");
+  sel.value = state.sounds.some((s) => s.name === cfg.sweep_sound) ? cfg.sweep_sound : "";
+}
+
+function setSweepSecs(v) {
+  $("sweepSecs").value = v;
+  $("sweepSecsOut").textContent = v + "s";
+}
+
+async function doSweep(direction) {
+  const r = await api("/api/sweep", { direction });
+  if (!r.ok) toast(r.error);
+  setTimeout(refresh, 150);
 }
 
 function renderTiming() {
@@ -385,7 +441,10 @@ function updateDenon() {
 function updateLive() {
   if (!state) return;
   const st = state.status;
-  const playing = st.now_playing ? st.now_playing.spots : [];
+  let playing = st.now_playing ? st.now_playing.spots : [];
+  if (st.now_playing && st.now_playing.progress != null && playing.length > 1) {
+    playing = [playing[Math.round(st.now_playing.progress * (playing.length - 1))]];
+  }
   const radioOn = st.radio.playing;
 
   document.querySelectorAll(".spot").forEach((n) => {
@@ -462,9 +521,11 @@ async function refresh() {
   }
   if (!cfg) {
     cfg = state.config;
-    renderYard(); renderPlacements(); renderTiming(); renderRadioSettings(); renderMatrix(true); renderDenonSettings(); renderAtmos(true); renderAtmosSettings();
+    renderYard(); renderPlacements(); renderTiming(); renderRadioSettings(); renderMatrix(true); renderDenonSettings(); renderAtmos(true); renderAtmosSettings(); renderSweep(); renderSweepOrder();
   } else {
+    const before = soundsKey;
     renderMatrix(false);
+    if (soundsKey !== before) renderSweep();
     renderAtmos(false);
   }
   updateAtmos();
@@ -480,6 +541,10 @@ function wire() {
     toast(r.started ? "Boo!" : "Already playing. Hang on…");
     setTimeout(refresh, 150);
   };
+  $("sweepLtr").onclick = () => doSweep("ltr");
+  $("sweepRtl").onclick = () => doSweep("rtl");
+  $("sweepSecs").oninput = () => { setSweepSecs(+$("sweepSecs").value); save({ sweep_seconds: +$("sweepSecs").value }); };
+  $("sweepSound").onchange = () => save({ sweep_sound: $("sweepSound").value });
   $("motionBtn").onclick = async () => { await api("/api/motion", {}); setTimeout(refresh, 150); };
   $("stopBtn").onclick = async () => { await api("/api/stop", { radio: true }); toast("Silence."); refresh(); };
   $("master").oninput = () => { setSlider("master", +$("master").value, true); save({ master_volume: +$("master").value }); };

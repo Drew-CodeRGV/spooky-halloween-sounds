@@ -78,6 +78,13 @@ def stop():
     return ok()
 
 
+@app.post("/api/sweep")
+def sweep():
+    body = request.get_json(force=True) or {}
+    err = eng.sweep(body.get("direction", "ltr"), body.get("sound"), body.get("seconds"))
+    return jsonify({"ok": err is None, "error": err})
+
+
 @app.post("/api/beep")
 def beep():
     eng.beep(int((request.get_json(force=True) or {}).get("channel", 0)))

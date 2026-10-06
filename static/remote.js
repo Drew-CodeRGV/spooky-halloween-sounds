@@ -59,13 +59,14 @@ const atmosIcon = (name) => (ATMOS_ICONS.find(([k]) => name.toLowerCase().includ
 // ---------- rendering ----------
 function renderLayout() {
   const cfg = state.config;
-  const key = JSON.stringify([cfg.placements.map((p) => [p.name, p.enabled]), state.sounds.map((s) => s.name),
+  const key = JSON.stringify([cfg.placements.map((p) => [p.name, p.enabled, p.x]), state.sounds.map((s) => s.name),
     state.ambience.map((a) => a.name)]);
   if (key === layoutKey) return;
   layoutKey = key;
 
-  $("spots").innerHTML = cfg.placements.map((p, i) =>
-    `<button class="btn r-spot ${p.enabled ? "" : "off"}" data-id="${p.id}"><b>${i + 1}</b><span>${esc(p.name)}</span></button>`).join("");
+  const ordered = cfg.placements.map((p, i) => ({ ...p, n: i + 1 })).sort((a, b) => a.x - b.x || a.y - b.y);
+  $("spots").innerHTML = ordered.map((p) =>
+    `<button class="btn r-spot ${p.enabled ? "" : "off"}" data-id="${p.id}"><b>${p.n}</b><span>${esc(p.name)}</span></button>`).join("");
   $("spots").querySelectorAll("[data-id]").forEach((b) => (b.onclick = () => play({ placement: b.dataset.id })));
 
   const target = $("target");
@@ -95,7 +96,9 @@ function renderLive() {
   const playing = st.now_playing;
   const radioOn = st.radio.playing;
 
-  document.querySelectorAll(".r-spot").forEach((b) => b.classList.toggle("playing", !!playing && playing.spots.includes(b.dataset.id)));
+  let lit = playing ? playing.spots : [];
+  if (playing && playing.progress != null && lit.length > 1) lit = [lit[Math.round(playing.progress * (lit.length - 1))]];
+  document.querySelectorAll(".r-spot").forEach((b) => b.classList.toggle("playing", lit.includes(b.dataset.id)));
   document.querySelectorAll(".r-sound").forEach((b) => b.classList.toggle("playing", !!playing && playing.sound === b.dataset.sound));
   $("scareBtn").classList.toggle("busy", !!playing);
 
@@ -168,6 +171,14 @@ async function refresh() {
 $("scareBtn").onclick = scare;
 $("motionBtn").onclick = async () => { buzz(); await api("/api/motion", {}); setTimeout(refresh, 150); };
 $("stopBtn").onclick = stopAll;
+const sweep = async (direction) => {
+  buzz(40);
+  const r = await api("/api/sweep", { direction });
+  if (!r.ok) toast(r.error);
+  setTimeout(refresh, 150);
+};
+$("sweepLtr").onclick = () => sweep("ltr");
+$("sweepRtl").onclick = () => sweep("rtl");
 document.querySelectorAll("#mode button").forEach((b) => (b.onclick = () => { buzz(); setConfig({ mode: b.dataset.mode }); }));
 $("master").oninput = () => { $("masterOut").textContent = Math.round($("master").value * 100) + "%"; };
 $("master").onchange = () => setConfig({ master_volume: +$("master").value });
