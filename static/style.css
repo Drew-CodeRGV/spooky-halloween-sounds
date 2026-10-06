@@ -216,6 +216,17 @@ details summary { cursor: pointer; color: var(--muted); font-weight: 600; margin
 .save-state.show { opacity: 1; }
 .save-state.bad { color: #ffb3bd; }
 
+/* Collapsible sections */
+h2.collapsible { cursor: pointer; display: flex; align-items: center; gap: 8px; user-select: none; -webkit-user-select: none; }
+.collapse-toggle {
+  flex: none; width: 22px; height: 22px; padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--muted); font: 700 1rem/1 Inter, system-ui, sans-serif; transition: transform .15s;
+}
+.collapse-toggle::before { content: "▾"; }
+.panel.collapsed .collapse-toggle { transform: rotate(-90deg); }
+.panel.collapsed .panel-body { display: none; }
+.panel.collapsed h2, .panel.collapsed .r-head { margin-bottom: 0; }
+
 /* Sweep */
 .sweep-row { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; margin-top: 12px; }
 .sweep-row .btn.big { flex: none; min-width: 120px; }
