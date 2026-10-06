@@ -179,22 +179,31 @@ function renderMatrix(force) {
   }
   const head = cfg.placements.map((p, i) => `<th class="${p.enabled ? "" : "off"}">${i + 1}<br>${esc(p.name)}</th>`).join("");
   const isOff = (name) => cfg.disabled_sounds.includes(name);
+  const sweeps = (name) => cfg.sweep_sounds.includes(name);
   const rows = state.sounds.map((s) => {
     const cells = cfg.placements.map((p) =>
       `<td><input type="checkbox" data-sound="${esc(s.name)}" data-id="${p.id}" ${p.muted_sounds.includes(s.name) ? "" : "checked"} aria-label="${esc(s.label)} on ${esc(p.name)}"></td>`).join("");
     return `<tr data-sound="${esc(s.name)}" class="${isOff(s.name) ? "sound-off" : ""}">
       <td class="name"><button class="icon-btn" data-play="${esc(s.name)}" title="Play now">▶</button>${esc(s.label)}<small>${s.seconds}s</small></td>
       <td class="onoff"><label class="switch" title="Turn this sound on or off everywhere"><input type="checkbox" data-onoff="${esc(s.name)}" ${isOff(s.name) ? "" : "checked"}><span></span></label></td>
+      <td class="onoff"><label class="switch sweep" title="Always sweep this sound across the whole yard"><input type="checkbox" data-sweep="${esc(s.name)}" ${sweeps(s.name) ? "checked" : ""}><span></span></label></td>
       ${cells}
       <td><button class="icon-btn" data-del="${esc(s.name)}" title="Remove sound">🗑</button></td></tr>`;
   }).join("");
-  t.innerHTML = `<thead><tr><th style="text-align:left">Sound</th><th>On</th>${head}<th></th></tr></thead><tbody>${rows}</tbody>`;
+  t.innerHTML = `<thead><tr><th style="text-align:left">Sound</th><th>On</th><th>Sweep</th>${head}<th></th></tr></thead><tbody>${rows}</tbody>`;
   t.querySelectorAll("[data-onoff]").forEach((cb) => {
     cb.onchange = () => {
       const name = cb.dataset.onoff;
       const off = cfg.disabled_sounds.filter((n) => n !== name);
       save({ disabled_sounds: cb.checked ? off : [...off, name] });
       cb.closest("tr").classList.toggle("sound-off", !cb.checked);
+    };
+  });
+  t.querySelectorAll("[data-sweep]").forEach((cb) => {
+    cb.onchange = () => {
+      const name = cb.dataset.sweep;
+      const rest = cfg.sweep_sounds.filter((n) => n !== name);
+      save({ sweep_sounds: cb.checked ? [...rest, name] : rest });
     };
   });
   t.querySelectorAll("input[data-id]").forEach((cb) => {

@@ -60,7 +60,7 @@ const atmosIcon = (name) => (ATMOS_ICONS.find(([k]) => name.toLowerCase().includ
 function renderLayout() {
   const cfg = state.config;
   const key = JSON.stringify([cfg.placements.map((p) => [p.name, p.enabled, p.x]), state.sounds.map((s) => s.name),
-    state.ambience.map((a) => a.name)]);
+    state.ambience.map((a) => a.name), cfg.sweep_sounds]);
   if (key === layoutKey) return;
   layoutKey = key;
 
@@ -85,7 +85,7 @@ function renderLayout() {
   }));
 
   $("sounds").innerHTML = state.sounds.length
-    ? state.sounds.map((s) => `<button class="btn r-sound" data-sound="${esc(s.name)}">▶ ${esc(s.label)}</button>`).join("")
+    ? state.sounds.map((s) => `<button class="btn r-sound" data-sound="${esc(s.name)}">${cfg.sweep_sounds.includes(s.name) ? "⇄" : "▶"} ${esc(s.label)}</button>`).join("")
     : `<p class="muted">No sounds yet. Add some from the full dashboard.</p>`;
   $("sounds").querySelectorAll("[data-sound]").forEach((b) =>
     (b.onclick = () => play({ sound: b.dataset.sound, placement: $("target").value || undefined })));

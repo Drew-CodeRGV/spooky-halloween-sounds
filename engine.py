@@ -54,6 +54,7 @@ DEFAULT_CONFIG = {
     "creep_chance": 0.15,
     "sweep_seconds": 8,               # how long a full-yard sweep takes
     "sweep_sound": "",                # "" = random
+    "sweep_sounds": [],               # sounds that always sweep across the yard when they play
     "active_hours_enabled": True,
     "active_start": "17:00",
     "active_end": "23:00",
@@ -92,6 +93,7 @@ def sanitize(cfg):
         cfg[lo], cfg[hi] = min(a, b), max(a, b)
     cfg["sweep_seconds"] = _num(cfg.get("sweep_seconds"), 2, 60, d["sweep_seconds"])
     cfg["sweep_sound"] = str(cfg.get("sweep_sound") or "")
+    cfg["sweep_sounds"] = [str(x) for x in (cfg.get("sweep_sounds") or [])]
     for k in ("answer_chance", "creep_chance"):
         cfg[k] = _num(cfg.get(k), 0, 1, d[k])
     cfg["active_hours_enabled"] = bool(cfg.get("active_hours_enabled"))
@@ -714,6 +716,12 @@ class Engine:
 
         spot = random.choice([p for p in spots if p["id"] != self.last_spot] or spots)
         sound = random.choice(self.allowed(spot))
+        if sound in cfg["sweep_sounds"] and len(spots) > 1:
+            err, v = self._sweep("random", sound, stop=False)
+            if v:
+                wait(v)
+                self.last_spot = self.now_playing["spots"][-1] if self.now_playing else None
+                return
         if not wait(self._play(sound, [spot])):
             return
         self.last_spot = spot["id"]
@@ -729,8 +737,12 @@ class Engine:
 
     def play_now(self, sound=None, placement_id=None):
         """Dashboard soundboard: stop whatever is playing and play right away."""
-        self.stop_sounds()
         cfg = self.config
+        if sound and not placement_id and sound in cfg["sweep_sounds"]:
+            err = self.sweep("random", sound)
+            if err is None or "two speakers" not in err:
+                return err  # else: only one speaker is on, so just play it there
+        self.stop_sounds()
         if placement_id:
             spot = self.placement(placement_id)
         else:
@@ -746,10 +758,17 @@ class Engine:
 
     def sweep(self, direction="ltr", sound=None, seconds=None):
         """Send one sound across every speaker that's on, end to end. Returns an error or None."""
+        err, _ = self._sweep(direction, sound, seconds)
+        return err
+
+    def _sweep(self, direction="ltr", sound=None, seconds=None, stop=True):
+        """Start a sweep. Returns (error, voice)."""
         cfg = self.config
         spots = yard_order([p for p in cfg["placements"] if p["enabled"]])
         if len(spots) < 2:
-            return "Turn on at least two speakers to sweep across."
+            return "Turn on at least two speakers to sweep across.", None
+        if direction == "random":
+            direction = random.choice(["ltr", "rtl"])
         if direction == "rtl":
             spots = spots[::-1]
         sound = sound or cfg["sweep_sound"]
@@ -757,17 +776,19 @@ class Engine:
             sound = ""
         pool = [sound] if sound else [s for s in self.sounds if s not in cfg["disabled_sounds"]] or list(self.sounds)
         if not pool:
-            return "No sounds loaded"
+            return "No sounds loaded", None
         sound = random.choice(pool)
-        n = int(float(seconds or cfg["sweep_seconds"]) * RATE)
+        # Last at least the chosen sweep time, but never cut the sound itself short
+        n = max(int(float(seconds or cfg["sweep_seconds"]) * RATE), len(self.sounds[sound]))
         mono = stretch(self.sounds[sound], n)
-        self.stop_sounds()
+        if stop:
+            self.stop_sounds()
         gains = creep_gains(len(mono), spots)
         v = self._add_voice(render(mono, gains))
         self.now_playing = {"sound": sound, "spots": [p["id"] for p in spots], "voice": v,
                             "sweep": True, "samples": len(mono)}
         self.add_log(f"{Path(sound).stem} sweeping {spots[0]['name']} → {spots[-1]['name']}")
-        return None
+        return None, v
 
     def beep(self, channel):
         self.stop_sounds()
