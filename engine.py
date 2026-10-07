@@ -81,7 +81,10 @@ DEFAULT_CONFIG = {
                "lat": None, "lon": None, "place": ""},
     # Ring doorbell: motion and button presses play a sound at the speaker nearest the door
     "ring": {"enabled": True, "placement": "", "cooldown": 20, "active_hours_only": True,
-             "motion_on": True, "motion_sound": "", "ding_on": True, "ding_sound": ""},
+             "motion_on": True, "motion_sound": "", "motion_volume": 1.0,
+             "ding_on": True, "ding_sound": "", "ding_volume": 0.5,
+             # which Ring devices count ("" = automatic: the ones with "door" in the name)
+             "devices": []},
     "denon": {"host": denon.DEFAULT_HOST, "auto_power": False, "input": "DVD", "mode": "DIRECT",
               "volume_db": -35.0, "max_db": -15.0},
 }
@@ -162,6 +165,9 @@ def sanitize(cfg):
     for k in ("enabled", "active_hours_only", "motion_on", "ding_on"):
         rg[k] = bool(rg[k])
     rg["cooldown"] = _num(rg["cooldown"], 0, 3600, 20)
+    rg["motion_volume"] = _num(rg.get("motion_volume"), 0, 1, 1.0)
+    rg["ding_volume"] = _num(rg.get("ding_volume"), 0, 1, 0.5)
+    rg["devices"] = [str(x) for x in (rg.get("devices") or [])]
     for k in ("placement", "motion_sound", "ding_sound"):
         rg[k] = str(rg[k] or "")
     cfg["denon"] = {**d["denon"], **cfg.get("denon", {})}
@@ -938,14 +944,14 @@ class Engine:
             self.voices = []
             self.now_playing = None
 
-    def _play(self, sound, spots, creep=False):
+    def _play(self, sound, spots, creep=False, gain=1.0):
         mono = self.sounds[sound]
         if creep:
             gains = creep_gains(len(mono), spots)
         else:
             gains = {}
             for p in spots:
-                gains[p["channel"]] = gains.get(p["channel"], 0) + p["volume"]
+                gains[p["channel"]] = gains.get(p["channel"], 0) + p["volume"] * gain
         v = self._add_voice(render(mono, gains))
         self.now_playing = {"sound": sound, "spots": [p["id"] for p in spots], "voice": v,
                             "sweep": creep, "samples": len(mono)}
@@ -1015,7 +1021,7 @@ class Engine:
             wait(self._play(random.choice(opts), [other]))
             self.last_spot = other["id"]
 
-    def play_now(self, sound=None, placement_id=None):
+    def play_now(self, sound=None, placement_id=None, gain=1.0):
         """Dashboard soundboard: stop whatever is playing and play right away."""
         cfg = self.config
         if sound and not placement_id and sound in cfg["sweep_sounds"]:
@@ -1033,7 +1039,7 @@ class Engine:
         pool = [sound] if sound else self.allowed(spot) or list(self.sounds)
         if not pool or pool[0] not in self.sounds:
             return "No sounds loaded"
-        self._play(random.choice(pool), [spot])
+        self._play(random.choice(pool), [spot], gain=gain)
         return None
 
     def sweep(self, direction="ltr", sound=None, seconds=None):
@@ -1120,10 +1126,17 @@ class Engine:
                     return p
         return next((p for p in cfg["placements"] if p["enabled"]), None)
 
+    def ring_device_counts(self, device):
+        chosen = self.config["ring"]["devices"]
+        return device in chosen if chosen else "door" in device.lower()
+
     def on_ring(self, kind, device="Ring", test=False):
         """Ring saw motion or someone pressed the doorbell: play that event's sound at the door."""
         rg = self.config["ring"]
         what = "Doorbell pressed" if kind == "ding" else "Ring motion"
+        if not test and not self.ring_device_counts(device):
+            self.add_log(f"{what} at {device}: not one of the door devices, ignored")
+            return
         if not test:
             if not rg["enabled"] or not rg[f"{'ding' if kind == 'ding' else 'motion'}_on"]:
                 self.add_log(f"{what} ({device}), but that's turned off")
@@ -1146,7 +1159,8 @@ class Engine:
             sound = ""
         self.ring_last = time.time()
         self.add_log(f"{what} at {device}{' (test)' if test else ''}")
-        err = self.play_now(sound or None, spot["id"])
+        vol = rg["ding_volume"] if kind == "ding" else rg["motion_volume"]
+        err = self.play_now(sound or None, spot["id"], gain=vol)
         if err:
             self.add_log(f"Couldn't play the Ring sound: {err}")
 

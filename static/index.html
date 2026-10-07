@@ -110,12 +110,14 @@
         <legend>🚶 Motion at the door</legend>
         <label class="toggle"><input type="checkbox" id="ringMotionOn"><span>Play a sound</span></label>
         <label class="field">Sound <select id="ringMotionSound"></select></label>
+        <label class="slider-row"><span>Volume</span><input type="range" id="ringMotionVol" min="0" max="1" step="0.05"><output id="ringMotionVolOut"></output></label>
         <button class="btn small" data-ring-test="motion">▶ Test motion</button>
       </fieldset>
       <fieldset>
         <legend>🔔 Doorbell pressed</legend>
         <label class="toggle"><input type="checkbox" id="ringDingOn"><span>Play a sound</span></label>
         <label class="field">Sound <select id="ringDingSound"></select></label>
+        <label class="slider-row"><span>Volume</span><input type="range" id="ringDingVol" min="0" max="1" step="0.05"><output id="ringDingVolOut"></output></label>
         <button class="btn small" data-ring-test="ding">▶ Test doorbell</button>
       </fieldset>
       <fieldset>
@@ -123,6 +125,10 @@
         <label class="field">Speaker by the door <select id="ringSpot"></select></label>
         <div class="range-pair">Wait <input type="number" id="ringCooldown" min="0" max="3600"> seconds between motion sounds</div>
         <label class="toggle"><input type="checkbox" id="ringHours"><span>Only during active hours</span></label>
+        <div class="field">Ring devices that count
+          <div class="chips" id="ringDevices"></div>
+          <div class="muted small" id="ringDevicesHint"></div>
+        </div>
       </fieldset>
     </div>
     <details id="ringSetup">

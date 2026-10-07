@@ -379,6 +379,8 @@ function renderRing() {
   $("ringDingOn").checked = rg.ding_on;
   $("ringCooldown").value = rg.cooldown;
   $("ringHours").checked = rg.active_hours_only;
+  setSlider("ringMotionVol", rg.motion_volume, true);
+  setSlider("ringDingVol", rg.ding_volume, true);
   const sounds = [["", "Random"], ...state.sounds.map((s) => [s.name, s.label])];
   options($("ringMotionSound"), sounds, rg.motion_sound);
   options($("ringDingSound"), sounds, rg.ding_sound);
@@ -395,6 +397,27 @@ function updateRing() {
     r.last_event ? `<span class="tag">Last: ${r.last_event.kind === "ding" ? "🔔 doorbell" : "🚶 motion"} at ${esc(r.last_event.t)}</span>` : "",
     r.error ? `<span class="muted small">${esc(r.error)}</span>` : ""].join("");
   if (!good && r.state === "not signed in") $("ringSetup").open = true;
+  renderRingDevices(r.devices || []);
+}
+
+let ringDevicesKey = "";
+function renderRingDevices(devices) {
+  const names = [...new Set(devices)];
+  const chosen = cfg.ring.devices;
+  const key = JSON.stringify([names, chosen]);
+  if (key === ringDevicesKey) return;
+  ringDevicesKey = key;
+  const counts = (n) => (chosen.length ? chosen.includes(n) : n.toLowerCase().includes("door"));
+  $("ringDevices").innerHTML = names.map((n) => `<button class="chip ${counts(n) ? "on" : ""}" data-dev="${esc(n)}">${counts(n) ? "✓ " : ""}${esc(n)}</button>`).join("")
+    || `<span class="muted small">Connect your Ring account to see your devices.</span>`;
+  $("ringDevicesHint").textContent = chosen.length ? "Only the checked devices trigger sounds." : "Automatic: devices with \"door\" in the name. Tap to choose yourself.";
+  $("ringDevices").querySelectorAll("[data-dev]").forEach((b) => (b.onclick = () => {
+    const n = b.dataset.dev;
+    const current = chosen.length ? chosen : names.filter((x) => x.toLowerCase().includes("door"));
+    const next = current.includes(n) ? current.filter((x) => x !== n) : [...current, n];
+    save({ ring: { devices: next } });
+    renderRingDevices(names);
+  }));
 }
 
 // ---------- Govee lights ----------
@@ -731,6 +754,8 @@ function wire() {
   $("ringSpot").onchange = () => save({ ring: { placement: $("ringSpot").value } });
   $("ringCooldown").onchange = () => save({ ring: { cooldown: +$("ringCooldown").value } });
   $("ringHours").onchange = () => save({ ring: { active_hours_only: $("ringHours").checked } });
+  $("ringMotionVol").oninput = () => { setSlider("ringMotionVol", +$("ringMotionVol").value, true); save({ ring: { motion_volume: +$("ringMotionVol").value } }); };
+  $("ringDingVol").oninput = () => { setSlider("ringDingVol", +$("ringDingVol").value, true); save({ ring: { ding_volume: +$("ringDingVol").value } }); };
   document.querySelectorAll("[data-ring-test]").forEach((b) => (b.onclick = async () => {
     await api("/api/ring/test", { kind: b.dataset.ringTest });
     toast(b.dataset.ringTest === "ding" ? "🔔 Doorbell test" : "🚶 Motion test");
