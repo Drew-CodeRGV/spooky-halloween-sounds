@@ -6,6 +6,7 @@ The protocol is small JSON messages over UDP:
   - commands:  send to the light's IP on port 4003 (turn, brightness, colorwc, devStatus)
 No cloud, no account, and fast enough to flicker along with a sound.
 """
+import base64
 import json
 import socket
 import time
@@ -76,6 +77,27 @@ class Govee:
         r, g, b = (max(0, min(255, int(c))) for c in rgb)
         self._send(ip, "colorwc", {"color": {"r": r, "g": g, "b": b}, "colorTemInKelvin": 0})
 
+    # Per-segment control ("razer" mode, the protocol Razer Chroma sync uses).
+    # Packets are 0xBB, len_hi, len_lo, command, data..., XOR checksum, sent base64-encoded.
+    # The light drops out of this mode if it gets no frame for a minute.
+    def _razer(self, ip, pkt):
+        c = 0
+        for b in pkt:
+            c ^= b
+        self._send(ip, "razer", {"pt": base64.b64encode(bytes(pkt + [c])).decode()})
+
+    def segments_mode(self, ip, on):
+        self._razer(ip, [0xBB, 0x00, 0x01, 0xB1, 0x01 if on else 0x00])
+
+    def segments(self, ip, colors):
+        """Set every segment along a light chain: colors = [(r, g, b), ...] from the first bulb."""
+        n = len(colors)
+        size = 2 + 3 * n
+        pkt = [0xBB, size >> 8, size & 0xFF, 0xB0, 0x01, n]   # 0x01 = no blending between segments
+        for rgb in colors:
+            pkt += [max(0, min(255, int(c))) for c in rgb]
+        self._razer(ip, pkt)
+
 
 def hex_to_rgb(h, default=(80, 0, 140)):
     try:
@@ -88,7 +110,7 @@ def hex_to_rgb(h, default=(80, 0, 140)):
 # What color a sound flashes, picked from its name.
 SOUND_COLORS = [
     (("thunder", "lightning", "storm"), (255, 255, 255)),
-    (("witch", "cackle", "cauldron", "zombie", "slime"), (60, 255, 40)),
+    (("predator", "alien", "creature", "witch", "cackle", "cauldron", "zombie", "slime"), (0, 120, 10)),
     (("ghost", "wail", "moan", "whisper", "dead", "spirit"), (90, 160, 255)),
     (("monster", "growl", "roar", "beast", "howl", "wolf", "blood", "scream"), (255, 0, 0)),
     (("bell", "church", "chain"), (255, 180, 60)),

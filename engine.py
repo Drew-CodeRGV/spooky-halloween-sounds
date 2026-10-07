@@ -70,7 +70,7 @@ DEFAULT_CONFIG = {
               "last_url": "", "last_name": ""},
     "ambience": {"on": False, "track": "graveyard.mp3", "volume": 0.4,
                  "placements": [f"p{i + 1}" for i in range(7)], "active_hours_only": True},
-    "lights": {"enabled": False, "devices": [], "idle_color": "#5a00a0", "idle_brightness": 15,
+    "lights": {"enabled": False, "devices": [], "idle_color": "#ff5a00", "idle_brightness": 35,
                "flash_brightness": 100, "flicker": True},
     "denon": {"host": denon.DEFAULT_HOST, "auto_power": False, "input": "DVD", "mode": "DIRECT",
               "volume_db": -35.0, "max_db": -15.0},
@@ -129,7 +129,11 @@ def sanitize(cfg):
     li["flash_brightness"] = _num(li["flash_brightness"], 1, 100, 100)
     li["devices"] = [{"ip": str(x.get("ip", "")), "id": str(x.get("id", "")), "sku": str(x.get("sku", "")),
                       "name": str(x.get("name") or x.get("sku") or "Light")[:30],
-                      "placement": str(x.get("placement") or "all"), "on": bool(x.get("on", True))}
+                      "placement": str(x.get("placement") or "all"), "on": bool(x.get("on", True)),
+                      # a chain of bulbs strung across the yard, first bulb at the west end
+                      "chain": bool(x.get("chain", False)),
+                      "segments": int(_num(x.get("segments"), 2, 100, 15)),
+                      "reverse": bool(x.get("reverse", False))}
                      for x in li.get("devices") or [] if isinstance(x, dict) and x.get("ip")]
     cfg["denon"] = {**d["denon"], **cfg.get("denon", {})}
     dn = cfg["denon"]
@@ -508,7 +512,7 @@ class Ambience:
                 "want": self.want, "loading": bool(self.loading), "error": self.error}
 
 
-LIGHT_HZ = 8  # light updates per second
+LIGHT_HZ = 15  # light updates per second
 
 
 def envelope(mono, hz=LIGHT_HZ):
@@ -535,6 +539,7 @@ class Lights:
         self.event = None
         self.tests = {}       # ip -> time a test flash ends
         self.last = {}        # ip -> {"rgb", "bri", "on", "t"}
+        self.chains = {}      # ip -> {"cur": current segment colors, "sent", "t", "mode_t"}
         threading.Thread(target=self._loop, daemon=True).start()
 
     def show(self, sound, mono, spot_ids, voice, sweep=False):
@@ -546,6 +551,7 @@ class Lights:
 
     def forget(self):
         self.last.clear()  # resend everything on the next tick (after settings change)
+        self.chains.clear()
 
     def _loop(self):
         while True:
@@ -580,10 +586,17 @@ class Lights:
         idle_b = cfg["idle_brightness"]
         flicker = cfg["flicker"] and self.eng.ambience.status()["playing"]
         now = time.time()
+        positions = self._chain_positions()
         for dev in cfg["devices"]:
             ip = dev["ip"]
             if not dev["on"]:
                 continue
+            if dev["chain"]:
+                self._chain_tick(dev, ev, positions, idle_rgb, idle_b, flicker, now)
+                continue
+            if self.chains.pop(ip, None) is not None:   # chain mode just switched off: back to whole-light control
+                self.govee.segments_mode(ip, False)
+                self.last.pop(ip, None)
             if self.tests.get(ip, 0) > now:  # test flash: alternate orange and white
                 on_beat = int(now * 4) % 2 == 0
                 self._set(ip, (255, 90, 0) if on_beat else (255, 255, 255), 100)
@@ -597,6 +610,65 @@ class Lights:
             else:
                 b = idle_b * (random.uniform(0.55, 1.15) if flicker and idle_b else 1)
                 self._set(ip, idle_rgb, b)
+
+    def _chain_positions(self):
+        """Where each turned-on speaker sits along the chain: 0 = west end, 1 = east end (from the yard map)."""
+        spots = [p for p in self.eng.config["placements"] if p["enabled"]]
+        if not spots:
+            return {}
+        lo, hi = min(p["x"] for p in spots), max(p["x"] for p in spots)
+        return {p["id"]: (p["x"] - lo) / (hi - lo) if hi > lo else 0.5 for p in spots}
+
+    def _event_center(self, ev, positions):
+        """Where along the chain the current sound is (0..1), following sweeps as they travel."""
+        spots = [s for s in ev["spots"] if s in positions]
+        if not spots:
+            return None
+        if not ev["sweep"] or len(spots) == 1:
+            return positions[spots[0]]
+        pos = ev["voice"]["pos"] / ev["len"] * (len(spots) - 1)
+        i = min(int(pos), len(spots) - 2)
+        f = pos - i
+        return positions[spots[i]] * (1 - f) + positions[spots[i + 1]] * f
+
+    def _chain_tick(self, dev, ev, positions, idle_rgb, idle_b, flicker, now):
+        ip, n = dev["ip"], dev["segments"]
+        st = self.chains.get(ip)
+        if st is None or len(st["cur"]) != n:
+            self.govee.power(ip, True)
+            self.govee.brightness(ip, 100)   # brightness is in the colors themselves
+            st = self.chains[ip] = {"cur": None, "sent": None, "t": 0, "mode_t": 0}
+        if now - st["mode_t"] > 20:          # keep segment mode switched on
+            self.govee.segments_mode(ip, True)
+            st["mode_t"] = now
+
+        idle = np.array(idle_rgb, dtype=float) * (idle_b / 100)
+        target = np.tile(idle, (n, 1))
+        if flicker and idle_b:
+            target *= np.random.uniform(0.6, 1.1, (n, 1))
+        if self.tests.get(ip, 0) > now:      # test flash: a spot running end to end
+            pos = (now * 0.8) % 1.0
+            ev_center, color, level = pos, np.array((255, 90, 0), float), 1.0
+        elif ev:
+            ev_center = self._event_center(ev, positions)
+            color = np.array(ev["color"], dtype=float) * (self.eng.config["lights"]["flash_brightness"] / 100)
+            env = ev["env"]
+            level = 0.45 + 0.55 * env[min(len(env) - 1, int(ev["voice"]["pos"] / (RATE / LIGHT_HZ)))]
+        else:
+            ev_center = None
+        if ev_center is not None:
+            seg_pos = (1 - ev_center if dev["reverse"] else ev_center) * (n - 1)
+            d = np.abs(np.arange(n) - seg_pos)
+            w = (np.exp(-(d / 0.9) ** 2) * level)[:, None]   # only the bulbs right next to the sound
+            target = target * (1 - w) + color * w
+
+        # Ease toward the target so bulbs fade in and out instead of snapping
+        cur = target if st["cur"] is None else st["cur"] + (target - st["cur"]) * 0.45
+        st["cur"] = cur
+        frame = np.clip(np.round(cur), 0, 255).astype(int)
+        if st["sent"] is None or np.abs(frame - st["sent"]).max() >= 2 or now - st["t"] > 5:
+            self.govee.segments(ip, [tuple(c) for c in frame])
+            st["sent"], st["t"] = frame, now
 
     def _set(self, ip, rgb, bri):
         """Send only what changed (plus a refresh every 30 s in case someone used the Govee app)."""

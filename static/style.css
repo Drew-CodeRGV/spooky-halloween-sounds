@@ -248,6 +248,10 @@ h2.collapsible { cursor: pointer; display: flex; align-items: center; gap: 8px; 
 .light-row .meta { font-size: .75rem; color: var(--muted); }
 .light-row input[type=text] { width: 100%; font-weight: 600; }
 .light-row.off { opacity: .5; }
+.light-row .chain-opts { grid-column: 1 / -1; display: grid; gap: 4px; font-size: .88rem; }
+.light-row .chain-detail { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; padding-left: 26px; }
+.light-row .chain-detail input[type=number] { width: 4.5em; }
+.light-row select:disabled { opacity: .4; }
 input[type=color] { width: 54px; height: 32px; padding: 2px; border-radius: 8px; border: 1px solid var(--line); background: var(--black-2); }
 @media (max-width: 600px) {
   .light-row { grid-template-columns: auto 1fr auto; }
