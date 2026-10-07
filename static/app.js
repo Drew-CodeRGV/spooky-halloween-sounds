@@ -381,7 +381,7 @@ function renderLights() {
       <div class="chain-opts">
         <label class="toggle"><input type="checkbox" data-chain ${d.chain ? "checked" : ""}><span>Chain across the yard: light only the bulbs nearest each sound, and follow sweeps</span></label>
         <span class="chain-detail ${d.chain ? "" : "hidden"}">
-          <label>Segments <input type="number" data-segs min="2" max="100" value="${d.segments}"></label>
+          <label title="One per light or bulb section in the chain">Segments <input type="number" data-segs min="2" max="100" value="${d.segments}"></label>
           <label class="toggle"><input type="checkbox" data-rev ${d.reverse ? "checked" : ""}><span>First bulb is on the east end</span></label>
         </span>
       </div>
@@ -398,7 +398,7 @@ function renderLights() {
       row.querySelector("select").disabled = d().chain;
       saveDevices();
     };
-    row.querySelector("[data-segs]").onchange = (e) => { d().segments = Math.max(2, Math.min(100, +e.target.value || 15)); saveDevices(); };
+    row.querySelector("[data-segs]").onchange = (e) => { d().segments = Math.max(2, Math.min(100, +e.target.value || 4)); saveDevices(); };
     row.querySelector("[data-rev]").onchange = (e) => { d().reverse = e.target.checked; saveDevices(); };
     row.querySelector("select").disabled = d().chain;
     row.querySelector("[data-test]").onclick = () => { api("/api/lights/test", { ip: d().ip }); toast(`Flashing ${d().name}`); };

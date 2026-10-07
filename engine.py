@@ -70,7 +70,7 @@ DEFAULT_CONFIG = {
               "last_url": "", "last_name": ""},
     "ambience": {"on": False, "track": "graveyard.mp3", "volume": 0.4,
                  "placements": [f"p{i + 1}" for i in range(7)], "active_hours_only": True},
-    "lights": {"enabled": False, "devices": [], "idle_color": "#ff5a00", "idle_brightness": 35,
+    "lights": {"enabled": False, "devices": [], "idle_color": "#ff5a00", "idle_brightness": 50,
                "flash_brightness": 100, "flicker": True},
     "denon": {"host": denon.DEFAULT_HOST, "auto_power": False, "input": "DVD", "mode": "DIRECT",
               "volume_db": -35.0, "max_db": -15.0},
@@ -132,7 +132,7 @@ def sanitize(cfg):
                       "placement": str(x.get("placement") or "all"), "on": bool(x.get("on", True)),
                       # a chain of bulbs strung across the yard, first bulb at the west end
                       "chain": bool(x.get("chain", False)),
-                      "segments": int(_num(x.get("segments"), 2, 100, 15)),
+                      "segments": int(_num(x.get("segments"), 2, 100, 4)),
                       "reverse": bool(x.get("reverse", False))}
                      for x in li.get("devices") or [] if isinstance(x, dict) and x.get("ip")]
     cfg["denon"] = {**d["denon"], **cfg.get("denon", {})}
@@ -659,7 +659,7 @@ class Lights:
         if ev_center is not None:
             seg_pos = (1 - ev_center if dev["reverse"] else ev_center) * (n - 1)
             d = np.abs(np.arange(n) - seg_pos)
-            w = (np.exp(-(d / 0.9) ** 2) * level)[:, None]   # only the bulbs right next to the sound
+            w = (np.exp(-(d / 0.6) ** 2) * level)[:, None]   # only the light(s) right next to the sound
             target = target * (1 - w) + color * w
 
         # Ease toward the target so bulbs fade in and out instead of snapping
