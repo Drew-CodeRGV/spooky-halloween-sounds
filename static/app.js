@@ -382,6 +382,10 @@ function renderLights() {
   $("lightsFlashOut").textContent = li.flash_brightness + "%";
   $("lightsFlicker").checked = li.flicker;
   setSlider("lightsRipple", li.ripple, true);
+  $("lightsSched").checked = li.schedule;
+  $("lightsBefore").value = li.minutes_before;
+  $("lightsOff").value = li.off_time;
+  $("lightsPlace").value = li.place;
   const box = $("lightsList");
   if (!li.devices.length) {
     box.innerHTML = `<p class="muted small">No lights yet. Press <b>Find lights</b>.</p>`;
@@ -421,6 +425,31 @@ function renderLights() {
     row.querySelector("select").disabled = d().chain;
     row.querySelector("[data-test]").onclick = () => { api("/api/lights/test", { ip: d().ip }); toast(`Flashing ${d().name}`); };
   });
+}
+
+function updateLightsSchedule() {
+  const li = cfg.lights, s = state.status.lights_schedule, el = $("lightsSchedInfo");
+  if (!li.schedule) el.textContent = "Lights stay on all the time (while syncing is on).";
+  else if (li.lat == null) el.innerHTML = "<b>Set your town</b> so the Pi knows when sunset is. Until then the lights stay on.";
+  else if (s) el.textContent = `${s.on ? "🟢 On now" : "⚫ Off now"} · Tonight: on at ${s.on_at} (sunset ${s.sunset}), off at ${s.off_at}. Location: ${li.place}`;
+}
+
+async function lookUpPlace() {
+  const q = $("lightsPlace").value.trim();
+  const box = $("lightsPlaces");
+  box.innerHTML = `<span class="muted small">Looking up “${esc(q)}”…</span>`;
+  const r = await api("/api/geocode?q=" + encodeURIComponent(q));
+  if (!r.ok) { box.innerHTML = `<span class="muted small">${esc(r.error)}</span>`; return; }
+  if (!r.places.length) { box.innerHTML = `<span class="muted small">No places found. Try "City, State".</span>`; return; }
+  box.innerHTML = r.places.map((p, i) => `<button class="chip" data-i="${i}">${esc(p.name)}</button>`).join("");
+  box.querySelectorAll("[data-i]").forEach((b) => (b.onclick = () => {
+    const p = r.places[+b.dataset.i];
+    save({ lights: { lat: p.lat, lon: p.lon, place: p.name } });
+    $("lightsPlace").value = p.name;
+    box.innerHTML = "";
+    toast(`Sunset times for ${p.name}`);
+    setTimeout(refresh, 600);
+  }));
 }
 
 async function findLights() {
@@ -651,6 +680,7 @@ async function refresh() {
   updateAtmos();
   updateLive();
   updateDenon();
+  updateLightsSchedule();
 }
 
 // ---------- Wire up static controls ----------
@@ -671,6 +701,11 @@ function wire() {
   $("lightsIdle").oninput = () => { $("lightsIdleOut").textContent = $("lightsIdle").value + "%"; save({ lights: { idle_brightness: +$("lightsIdle").value } }); };
   $("lightsFlash").oninput = () => { $("lightsFlashOut").textContent = $("lightsFlash").value + "%"; save({ lights: { flash_brightness: +$("lightsFlash").value } }); };
   $("lightsFlicker").onchange = () => save({ lights: { flicker: $("lightsFlicker").checked } });
+  $("lightsSched").onchange = () => save({ lights: { schedule: $("lightsSched").checked } });
+  $("lightsBefore").onchange = () => save({ lights: { minutes_before: +$("lightsBefore").value } });
+  $("lightsOff").onchange = () => save({ lights: { off_time: $("lightsOff").value } });
+  $("lightsPlaceBtn").onclick = lookUpPlace;
+  $("lightsPlace").onkeydown = (e) => { if (e.key === "Enter") lookUpPlace(); };
   $("lightsRipple").oninput = () => { setSlider("lightsRipple", +$("lightsRipple").value, true); save({ lights: { ripple: +$("lightsRipple").value } }); };
   $("motionBtn").onclick = async () => { await api("/api/motion", {}); setTimeout(refresh, 150); };
   $("stopBtn").onclick = async () => { await api("/api/stop", { radio: true }); toast("Silence."); refresh(); };

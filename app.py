@@ -4,7 +4,10 @@
 Open http://spooky.local (or the Pi's IP address) from any phone or laptop on your Wi-Fi.
 Set SPOOKY_PORT to use a port other than 80.
 """
+import json
 import os
+import urllib.parse
+import urllib.request
 
 from flask import Flask, jsonify, request, send_from_directory
 from werkzeug.utils import secure_filename
@@ -163,6 +166,24 @@ def lights_find():
     except OSError as e:
         return jsonify({"ok": False, "error": f"Couldn't search the network: {e}"})
     return jsonify({"ok": True, "found": len(found), "lights": eng.config["lights"]})
+
+
+@app.get("/api/geocode")
+def geocode():
+    """Look up a town so the lights know when sunset is (free Open-Meteo place search, no key)."""
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify({"ok": False, "error": "Type a town or ZIP code"})
+    try:
+        url = "https://geocoding-api.open-meteo.com/v1/search?" + urllib.parse.urlencode(
+            {"name": q, "count": 5, "language": "en", "format": "json"})
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "SpookyHalloweenSounds/1.0"}), timeout=8) as r:
+            data = json.load(r)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Couldn't look that up: {e}"})
+    places = [{"name": ", ".join(x for x in (p.get("name"), p.get("admin1"), p.get("country_code")) if x),
+               "lat": p["latitude"], "lon": p["longitude"]} for p in data.get("results", [])]
+    return jsonify({"ok": True, "places": places})
 
 
 @app.post("/api/lights/test")

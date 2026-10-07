@@ -114,6 +114,17 @@
         <label class="slider-row"><span>Idle brightness</span><input type="range" id="lightsIdle" min="0" max="100" step="1"><output id="lightsIdleOut"></output></label>
         <label class="toggle"><input type="checkbox" id="lightsFlicker"><span>Flicker while an atmosphere plays</span></label>
       </fieldset>
+      <fieldset class="lights-schedule">
+        <legend>Schedule</legend>
+        <label class="toggle"><input type="checkbox" id="lightsSched"><span>Only on in the evening</span></label>
+        <div class="range-pair">On <input type="number" id="lightsBefore" min="-180" max="300"> minutes before sunset, off at <input type="time" id="lightsOff"></div>
+        <div class="radio-search">
+          <input type="search" id="lightsPlace" placeholder="Your town or ZIP (for sunset times)">
+          <button class="btn small" id="lightsPlaceBtn">Set</button>
+        </div>
+        <div class="chips" id="lightsPlaces"></div>
+        <div class="muted small" id="lightsSchedInfo"></div>
+      </fieldset>
       <fieldset>
         <legend>During a scare</legend>
         <label class="slider-row"><span>Flash brightness</span><input type="range" id="lightsFlash" min="1" max="100" step="1"><output id="lightsFlashOut"></output></label>

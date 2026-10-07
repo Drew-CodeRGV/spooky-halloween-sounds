@@ -23,6 +23,7 @@ import numpy as np
 
 import denon
 import govee
+import sun
 
 ROOT = Path(__file__).resolve().parent
 SOUNDS_DIR = ROOT / "sounds"
@@ -73,7 +74,10 @@ DEFAULT_CONFIG = {
                  "placements": [f"p{i + 1}" for i in range(7)], "active_hours_only": True},
     "lights": {"enabled": False, "devices": [], "idle_color": "#ff5a00", "idle_brightness": 50,
                "flash_brightness": 100, "flicker": True,
-               "ripple": 0.25},   # how much lights away from the sound still react (0..1)
+               "ripple": 0.25,    # how much lights away from the sound still react (0..1)
+               # On a schedule: on `minutes_before` sunset, off at `off_time` (needs the yard's location)
+               "schedule": True, "minutes_before": 30, "off_time": "04:00",
+               "lat": None, "lon": None, "place": ""},
     "denon": {"host": denon.DEFAULT_HOST, "auto_power": False, "input": "DVD", "mode": "DIRECT",
               "volume_db": -35.0, "max_db": -15.0},
 }
@@ -132,6 +136,15 @@ def sanitize(cfg):
     li["idle_brightness"] = _num(li["idle_brightness"], 0, 100, 15)
     li["flash_brightness"] = _num(li["flash_brightness"], 1, 100, 100)
     li["ripple"] = _num(li.get("ripple"), 0, 1, 0.25)
+    li["schedule"] = bool(li.get("schedule"))
+    li["minutes_before"] = int(_num(li.get("minutes_before"), -180, 300, 30))
+    ot = str(li.get("off_time") or "04:00")
+    li["off_time"] = ot if len(ot) == 5 and ot[2] == ":" and ot.replace(":", "").isdigit() else "04:00"
+    try:
+        li["lat"], li["lon"] = float(li["lat"]), float(li["lon"])
+    except (TypeError, ValueError):
+        li["lat"] = li["lon"] = None
+    li["place"] = str(li.get("place") or "")[:80]
     li["devices"] = [{"ip": str(x.get("ip", "")), "id": str(x.get("id", "")), "sku": str(x.get("sku", "")),
                       "name": str(x.get("name") or x.get("sku") or "Light")[:30],
                       "placement": str(x.get("placement") or "all"), "on": bool(x.get("on", True)),
@@ -545,6 +558,8 @@ class Lights:
         self.tests = {}       # ip -> time a test flash ends
         self.last = {}        # ip -> {"rgb", "bri", "on", "t"}
         self.chains = {}      # ip -> {"cur": current segment colors, "sent", "t", "mode_t"}
+        self.dark_t = None    # when we last told the lights to switch off (outside their schedule)
+        self._sched = (0, None)
         threading.Thread(target=self._loop, daemon=True).start()
 
     def show(self, sound, mono, spot_ids, voice, sweep=False):
@@ -580,10 +595,48 @@ class Lights:
         d = abs(pos - spots.index(dev["placement"]))
         return float(np.cos(min(1.0, d) * np.pi / 2))
 
+    def schedule(self):
+        """Tonight's light schedule, or None if there's no schedule (or no location set yet)."""
+        cfg = self.eng.config["lights"]
+        if not cfg["schedule"] or cfg["lat"] is None:
+            return None
+        t, cached = self._sched
+        if time.time() - t < 20 and cached and cached["key"] == (cfg["lat"], cfg["lon"], cfg["minutes_before"], cfg["off_time"]):
+            return cached
+        on, on_at, off_at, sunset_at = sun.lights_window(datetime.datetime.now(), cfg["lat"], cfg["lon"],
+                                                         cfg["minutes_before"], cfg["off_time"])
+        cached = {"on": on, "on_at": on_at, "off_at": off_at, "sunset": sunset_at,
+                  "key": (cfg["lat"], cfg["lon"], cfg["minutes_before"], cfg["off_time"])}
+        self._sched = (time.time(), cached)
+        return cached
+
+    def _all_off(self, cfg):
+        """Outside the schedule: switch every light off (repeated now and then in case someone turns one on)."""
+        now = time.time()
+        if self.dark_t and now - self.dark_t < 60:
+            return
+        if not self.dark_t:
+            self.eng.add_log("Lights off for the night (schedule)")
+        for dev in cfg["devices"]:
+            if dev["on"]:
+                if dev["chain"]:
+                    self.govee.segments_mode(dev["ip"], False)
+                self.govee.power(dev["ip"], False)
+        self.dark_t = now
+        self.forget()
+
     def _tick(self):
         cfg = self.eng.config["lights"]
         if not cfg["enabled"] or not cfg["devices"]:
             return
+        sched = self.schedule()
+        if sched and not sched["on"]:
+            self._all_off(cfg)
+            return
+        if self.dark_t:  # schedule just started: lights back on
+            self.dark_t = None
+            self.forget()
+            self.eng.add_log("Lights on for the night (schedule)")
         ev = self.event
         if ev and ev["voice"]["done"].is_set():
             self.event = ev = None
@@ -1034,6 +1087,13 @@ class Engine:
             elif not link.startswith("connected"):
                 self.add_log("HDMI disconnected. Check the cable to the Denon.")
 
+    def _schedule_status(self):
+        s = self.lights.schedule() if hasattr(self, "lights") else None
+        if not s:
+            return None
+        fmt = lambda d: d.strftime("%-I:%M %p")
+        return {"on": s["on"], "on_at": fmt(s["on_at"]), "off_at": fmt(s["off_at"]), "sunset": fmt(s["sunset"])}
+
     def ambience_wanted(self):
         cfg = self.config
         am = cfg["ambience"]
@@ -1216,6 +1276,7 @@ class Engine:
                 "radio": self.radio.status(),
                 "denon": self.denon.status,
                 "ambience": self.ambience.status(),
+                "lights_schedule": self._schedule_status(),
                 "time": datetime.datetime.now().strftime("%-I:%M %p"),
             },
             "log": list(self.log)[:30],
