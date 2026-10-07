@@ -37,11 +37,11 @@ function toast(msg) {
 
 // Merge a change into the config and save it shortly after (debounced)
 function save(patch) {
-  const { radio, denon: dn, ambience, lights, ...rest } = patch;
+  const { radio, denon: dn, ambience, lights, ring, ...rest } = patch;
   Object.assign(cfg, rest);
   pending = { ...pending, ...rest };
   showSaved("Saving…");
-  for (const [k, v] of [["radio", radio], ["denon", dn], ["ambience", ambience], ["lights", lights]]) {
+  for (const [k, v] of [["radio", radio], ["denon", dn], ["ambience", ambience], ["lights", lights], ["ring", ring]]) {
     if (!v) continue;
     cfg[k] = { ...cfg[k], ...v };
     pending[k] = { ...(pending[k] || {}), ...v };
@@ -370,6 +370,33 @@ function markPreview() {
   document.querySelectorAll("[data-preview]").forEach((b) => b.classList.toggle("previewing", b.dataset.preview === previewName));
 }
 
+// ---------- Ring doorbell ----------
+
+function renderRing() {
+  const rg = cfg.ring;
+  $("ringOn").checked = rg.enabled;
+  $("ringMotionOn").checked = rg.motion_on;
+  $("ringDingOn").checked = rg.ding_on;
+  $("ringCooldown").value = rg.cooldown;
+  $("ringHours").checked = rg.active_hours_only;
+  const sounds = [["", "Random"], ...state.sounds.map((s) => [s.name, s.label])];
+  options($("ringMotionSound"), sounds, rg.motion_sound);
+  options($("ringDingSound"), sounds, rg.ding_sound);
+  options($("ringSpot"), [["", "Automatic (the porch speaker)"], ...cfg.placements.map((p) => [p.id, p.name + (p.enabled ? "" : " (off)")])], rg.placement);
+}
+
+function updateRing() {
+  const r = state.status.ring || {};
+  const box = $("ringStatus");
+  const good = r.state === "connected";
+  const label = { connected: "Connected", "not signed in": "Not connected yet", "not installed": "Needs the installer", starting: "Connecting…", error: "Connection problem" }[r.state] || r.state;
+  box.innerHTML = [`<span class="tag ${good ? "good" : r.state === "error" ? "bad" : ""}">${esc(label)}</span>`,
+    good && r.devices?.length ? `<span class="tag">${esc(r.devices.join(", "))}</span>` : "",
+    r.last_event ? `<span class="tag">Last: ${r.last_event.kind === "ding" ? "🔔 doorbell" : "🚶 motion"} at ${esc(r.last_event.t)}</span>` : "",
+    r.error ? `<span class="muted small">${esc(r.error)}</span>` : ""].join("");
+  if (!good && r.state === "not signed in") $("ringSetup").open = true;
+}
+
 // ---------- Govee lights ----------
 
 function renderLights() {
@@ -670,17 +697,18 @@ async function refresh() {
   }
   if (!cfg) {
     cfg = state.config;
-    renderYard(); renderPlacements(); renderTiming(); renderRadioSettings(); renderMatrix(true); renderDenonSettings(); renderAtmos(true); renderAtmosSettings(); renderSweep(); renderSweepOrder(); renderLights();
+    renderYard(); renderPlacements(); renderTiming(); renderRadioSettings(); renderMatrix(true); renderDenonSettings(); renderAtmos(true); renderAtmosSettings(); renderSweep(); renderSweepOrder(); renderLights(); renderRing();
   } else {
     const before = soundsKey;
     renderMatrix(false);
-    if (soundsKey !== before) renderSweep();
+    if (soundsKey !== before) { renderSweep(); renderRing(); }
     renderAtmos(false);
   }
   updateAtmos();
   updateLive();
   updateDenon();
   updateLightsSchedule();
+  updateRing();
 }
 
 // ---------- Wire up static controls ----------
@@ -695,6 +723,19 @@ function wire() {
   $("sweepRtl").onclick = () => doSweep("rtl");
   $("sweepSecs").oninput = () => { setSweepSecs(+$("sweepSecs").value); save({ sweep_seconds: +$("sweepSecs").value }); };
   $("sweepSound").onchange = () => save({ sweep_sound: $("sweepSound").value });
+  $("ringOn").onchange = () => save({ ring: { enabled: $("ringOn").checked } });
+  $("ringMotionOn").onchange = () => save({ ring: { motion_on: $("ringMotionOn").checked } });
+  $("ringDingOn").onchange = () => save({ ring: { ding_on: $("ringDingOn").checked } });
+  $("ringMotionSound").onchange = () => save({ ring: { motion_sound: $("ringMotionSound").value } });
+  $("ringDingSound").onchange = () => save({ ring: { ding_sound: $("ringDingSound").value } });
+  $("ringSpot").onchange = () => save({ ring: { placement: $("ringSpot").value } });
+  $("ringCooldown").onchange = () => save({ ring: { cooldown: +$("ringCooldown").value } });
+  $("ringHours").onchange = () => save({ ring: { active_hours_only: $("ringHours").checked } });
+  document.querySelectorAll("[data-ring-test]").forEach((b) => (b.onclick = async () => {
+    await api("/api/ring/test", { kind: b.dataset.ringTest });
+    toast(b.dataset.ringTest === "ding" ? "🔔 Doorbell test" : "🚶 Motion test");
+    setTimeout(refresh, 200);
+  }));
   $("lightsFind").onclick = findLights;
   $("lightsOn").onchange = () => save({ lights: { enabled: $("lightsOn").checked } });
   $("lightsIdleColor").oninput = () => save({ lights: { idle_color: $("lightsIdleColor").value } });

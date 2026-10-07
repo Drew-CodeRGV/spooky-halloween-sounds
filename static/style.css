@@ -243,6 +243,10 @@ h2.collapsible { cursor: pointer; display: flex; align-items: center; gap: 8px; 
   .sweep-opts { grid-column: 1 / -1; grid-row: 1; }
 }
 
+/* Ring */
+pre.cmd { background: var(--black-2); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px;
+  overflow-x: auto; font-size: .82rem; color: var(--slime); white-space: pre; }
+
 /* Govee lights */
 .lights { display: grid; gap: 8px; margin: 12px 0; }
 .light-row { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 10px; align-items: center;

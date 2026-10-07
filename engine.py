@@ -23,6 +23,7 @@ import numpy as np
 
 import denon
 import govee
+import ringwatch
 import sun
 
 ROOT = Path(__file__).resolve().parent
@@ -78,6 +79,9 @@ DEFAULT_CONFIG = {
                # On a schedule: on `minutes_before` sunset, off at `off_time` (needs the yard's location)
                "schedule": True, "minutes_before": 30, "off_time": "04:00",
                "lat": None, "lon": None, "place": ""},
+    # Ring doorbell: motion and button presses play a sound at the speaker nearest the door
+    "ring": {"enabled": True, "placement": "", "cooldown": 20, "active_hours_only": True,
+             "motion_on": True, "motion_sound": "", "ding_on": True, "ding_sound": ""},
     "denon": {"host": denon.DEFAULT_HOST, "auto_power": False, "input": "DVD", "mode": "DIRECT",
               "volume_db": -35.0, "max_db": -15.0},
 }
@@ -153,6 +157,13 @@ def sanitize(cfg):
                       "segments": int(_num(x.get("segments"), 2, 100, 4)),
                       "reverse": bool(x.get("reverse", False))}
                      for x in li.get("devices") or [] if isinstance(x, dict) and x.get("ip")]
+    cfg["ring"] = {**d["ring"], **cfg.get("ring", {})}
+    rg = cfg["ring"]
+    for k in ("enabled", "active_hours_only", "motion_on", "ding_on"):
+        rg[k] = bool(rg[k])
+    rg["cooldown"] = _num(rg["cooldown"], 0, 3600, 20)
+    for k in ("placement", "motion_sound", "ding_sound"):
+        rg[k] = str(rg[k] or "")
     cfg["denon"] = {**d["denon"], **cfg.get("denon", {})}
     dn = cfg["denon"]
     dn["max_db"] = _num(dn["max_db"], -80, 18, d["denon"]["max_db"])
@@ -812,6 +823,8 @@ class Engine:
         threading.Thread(target=self._schedule_loop, daemon=True).start()
         self.denon = denon.Denon()
         self.lights = Lights(self)
+        self.ring_last = 0
+        self.ring = ringwatch.RingWatcher(self.on_ring, self.add_log)
         threading.Thread(target=self._denon_loop, daemon=True).start()
         self._start_sensor()
         self.add_log("Spooky engine started")
@@ -1094,6 +1107,49 @@ class Engine:
         fmt = lambda d: d.strftime("%-I:%M %p")
         return {"on": s["on"], "on_at": fmt(s["on_at"]), "off_at": fmt(s["off_at"]), "sunset": fmt(s["sunset"])}
 
+    # -- Ring doorbell
+    def ring_spot(self):
+        """The speaker nearest the door: the one chosen on the dashboard, else one named like a porch/door."""
+        cfg = self.config
+        chosen = self.placement(cfg["ring"]["placement"]) if cfg["ring"]["placement"] else None
+        if chosen:
+            return chosen
+        for word in ("porch", "door", "front"):
+            for p in cfg["placements"]:
+                if p["enabled"] and word in p["name"].lower():
+                    return p
+        return next((p for p in cfg["placements"] if p["enabled"]), None)
+
+    def on_ring(self, kind, device="Ring", test=False):
+        """Ring saw motion or someone pressed the doorbell: play that event's sound at the door."""
+        rg = self.config["ring"]
+        what = "Doorbell pressed" if kind == "ding" else "Ring motion"
+        if not test:
+            if not rg["enabled"] or not rg[f"{'ding' if kind == 'ding' else 'motion'}_on"]:
+                self.add_log(f"{what} ({device}), but that's turned off")
+                return
+            if rg["active_hours_only"] and not self.active_hours():
+                self.add_log(f"{what} ({device}), but it's outside active hours")
+                return
+            if self.radio.playing and self.config["radio"]["override"]:
+                self.add_log(f"{what} ({device}), but the radio is on")
+                return
+            # a doorbell press always plays; motion waits out the cooldown
+            if kind != "ding" and time.time() - self.ring_last < rg["cooldown"]:
+                return
+        spot = self.ring_spot()
+        if not spot:
+            self.add_log(f"{what}, but no speaker is turned on")
+            return
+        sound = rg["ding_sound"] if kind == "ding" else rg["motion_sound"]
+        if sound and sound not in self.sounds:
+            sound = ""
+        self.ring_last = time.time()
+        self.add_log(f"{what} at {device}{' (test)' if test else ''}")
+        err = self.play_now(sound or None, spot["id"])
+        if err:
+            self.add_log(f"Couldn't play the Ring sound: {err}")
+
     def ambience_wanted(self):
         cfg = self.config
         am = cfg["ambience"]
@@ -1236,7 +1292,7 @@ class Engine:
         with self.lock:
             cfg = copy.deepcopy(self.config)
             for k, v in patch.items():
-                if k in ("radio", "denon", "ambience", "lights") and isinstance(v, dict):
+                if k in ("radio", "denon", "ambience", "lights", "ring") and isinstance(v, dict):
                     cfg[k].update(v)
                 elif k in DEFAULT_CONFIG:
                     cfg[k] = v
@@ -1277,6 +1333,7 @@ class Engine:
                 "denon": self.denon.status,
                 "ambience": self.ambience.status(),
                 "lights_schedule": self._schedule_status(),
+                "ring": {**self.ring.status, "door_spot": (self.ring_spot() or {}).get("id")},
                 "time": datetime.datetime.now().strftime("%-I:%M %p"),
             },
             "log": list(self.log)[:30],

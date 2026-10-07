@@ -100,6 +100,39 @@
     </details>
   </section>
 
+  <!-- Ring doorbell -->
+  <section class="panel">
+    <h2>Ring Doorbell</h2>
+    <div class="denon-status" id="ringStatus"></div>
+    <label class="toggle"><input type="checkbox" id="ringOn"><span>Play a sound when the Ring sees someone or the doorbell is pressed</span></label>
+    <div class="grid2 radio-settings">
+      <fieldset>
+        <legend>🚶 Motion at the door</legend>
+        <label class="toggle"><input type="checkbox" id="ringMotionOn"><span>Play a sound</span></label>
+        <label class="field">Sound <select id="ringMotionSound"></select></label>
+        <button class="btn small" data-ring-test="motion">▶ Test motion</button>
+      </fieldset>
+      <fieldset>
+        <legend>🔔 Doorbell pressed</legend>
+        <label class="toggle"><input type="checkbox" id="ringDingOn"><span>Play a sound</span></label>
+        <label class="field">Sound <select id="ringDingSound"></select></label>
+        <button class="btn small" data-ring-test="ding">▶ Test doorbell</button>
+      </fieldset>
+      <fieldset>
+        <legend>Settings</legend>
+        <label class="field">Speaker by the door <select id="ringSpot"></select></label>
+        <div class="range-pair">Wait <input type="number" id="ringCooldown" min="0" max="3600"> seconds between motion sounds</div>
+        <label class="toggle"><input type="checkbox" id="ringHours"><span>Only during active hours</span></label>
+      </fieldset>
+    </div>
+    <details id="ringSetup">
+      <summary>Connect your Ring account</summary>
+      <p class="small">Sign in once, on the Pi itself, so your password never passes through this page. In a terminal on the Pi (or over SSH), run:</p>
+      <pre class="cmd">~/spooky-halloween-sounds/.venv/bin/python ~/spooky-halloween-sounds/ring_setup.py</pre>
+      <p class="muted small">It asks for your Ring email, password and the code Ring texts you, and saves only a sign-in token on the Pi. To disconnect later: Ring app → Control Center → Authorized Client Devices.</p>
+    </details>
+  </section>
+
   <!-- Govee lights -->
   <section class="panel">
     <h2>Govee Lights</h2>

@@ -181,6 +181,19 @@ if pgrep -x pipewire >/dev/null || pgrep -x pulseaudio >/dev/null; then
   warn "It can block 7.1 HDMI audio. Raspberry Pi OS Lite is recommended."
 fi
 
+# ---- 8b. Ring doorbell library (not packaged by Debian, so it lives in a private venv) --------------
+say "Installing the Ring doorbell library"
+apt-get install -y --no-install-recommends python3-venv >/dev/null
+if [[ ! -x "$APP_DIR/.venv/bin/python" ]]; then
+  sudo -u "$RUN_USER" python3 -m venv --system-site-packages "$APP_DIR/.venv"
+fi
+sudo -u "$RUN_USER" "$APP_DIR/.venv/bin/pip" install -q --upgrade "ring_doorbell>=0.9.14,<0.10" \
+  || warn "Couldn't install the Ring library (no internet?). Everything else still works."
+PYBIN=/usr/bin/python3   # fall back to the system Python if the venv isn't usable
+if "$APP_DIR/.venv/bin/python" -c "import flask, numpy" 2>/dev/null; then
+  PYBIN="$APP_DIR/.venv/bin/python"
+fi
+
 # ---- 9. Run at boot -----------------------------------------------------------------------
 say "Setting up the spooky service"
 cat > /etc/systemd/system/spooky.service <<EOF
@@ -195,7 +208,7 @@ WorkingDirectory=$APP_DIR
 Environment=SPOOKY_PORT=$SPOOKY_PORT
 Environment=PYTHONUNBUFFERED=1
 ExecStartPre=-/usr/local/bin/spooky-selfheal $APP_DIR
-ExecStart=/usr/bin/python3 $APP_DIR/app.py
+ExecStart=$PYBIN $APP_DIR/app.py
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 Restart=always
 RestartSec=3

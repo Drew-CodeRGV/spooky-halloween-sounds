@@ -3,3 +3,6 @@ __pycache__/
 .DS_Store
 config.json
 config.tmp
+.venv/
+ring_token.json
+ring_fcm.json

@@ -102,7 +102,7 @@ fi
 # Everything checks out: refresh the known-good copy (only changed files get copied).
 if [[ -z "$(problems "$APP_DIR")" ]]; then
   mkdir -p "$GOOD"
-  rsync -a --delete --exclude .git --exclude __pycache__ --exclude '*.tmp' "$APP_DIR/" "$GOOD/"
+  rsync -a --delete --exclude .git --exclude .venv --exclude __pycache__ --exclude '*.tmp' "$APP_DIR/" "$GOOD/"
   sync
 fi
 exit 0

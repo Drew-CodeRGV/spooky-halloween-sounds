@@ -186,6 +186,13 @@ def geocode():
     return jsonify({"ok": True, "places": places})
 
 
+@app.post("/api/ring/test")
+def ring_test():
+    kind = (request.get_json(force=True) or {}).get("kind", "motion")
+    eng.on_ring("ding" if kind == "ding" else "motion", "the dashboard", test=True)
+    return ok()
+
+
 @app.post("/api/lights/test")
 def lights_test():
     eng.lights.test((request.get_json(force=True) or {}).get("ip", ""))
