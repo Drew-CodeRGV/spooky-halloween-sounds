@@ -240,6 +240,20 @@ h2.collapsible { cursor: pointer; display: flex; align-items: center; gap: 8px; 
   .sweep-opts { grid-column: 1 / -1; grid-row: 1; }
 }
 
+/* Govee lights */
+.lights { display: grid; gap: 8px; margin: 12px 0; }
+.light-row { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: 10px; align-items: center;
+  padding: 10px 12px; border-radius: 10px; background: var(--black-2); border: 1px solid var(--line); }
+.light-row .bulb { font-size: 1.3rem; }
+.light-row .meta { font-size: .75rem; color: var(--muted); }
+.light-row input[type=text] { width: 100%; font-weight: 600; }
+.light-row.off { opacity: .5; }
+input[type=color] { width: 54px; height: 32px; padding: 2px; border-radius: 8px; border: 1px solid var(--line); background: var(--black-2); }
+@media (max-width: 600px) {
+  .light-row { grid-template-columns: auto 1fr auto; }
+  .light-row select { grid-column: 2 / -1; }
+}
+
 /* Background atmosphere */
 .atmos { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
 .atmos-tile {

@@ -156,6 +156,21 @@ def denon_cmd():
     return jsonify({"ok": err is None, "error": err, "denon": eng.denon.status})
 
 
+@app.post("/api/lights/find")
+def lights_find():
+    try:
+        found = eng.find_lights()
+    except OSError as e:
+        return jsonify({"ok": False, "error": f"Couldn't search the network: {e}"})
+    return jsonify({"ok": True, "found": len(found), "lights": eng.config["lights"]})
+
+
+@app.post("/api/lights/test")
+def lights_test():
+    eng.lights.test((request.get_json(force=True) or {}).get("ip", ""))
+    return ok()
+
+
 @app.post("/api/radio/stop")
 def radio_stop():
     eng.stop_radio()

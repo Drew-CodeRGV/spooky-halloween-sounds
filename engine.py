@@ -22,6 +22,7 @@ from pathlib import Path
 import numpy as np
 
 import denon
+import govee
 
 ROOT = Path(__file__).resolve().parent
 SOUNDS_DIR = ROOT / "sounds"
@@ -69,6 +70,8 @@ DEFAULT_CONFIG = {
               "last_url": "", "last_name": ""},
     "ambience": {"on": False, "track": "graveyard.mp3", "volume": 0.4,
                  "placements": [f"p{i + 1}" for i in range(7)], "active_hours_only": True},
+    "lights": {"enabled": False, "devices": [], "idle_color": "#5a00a0", "idle_brightness": 15,
+               "flash_brightness": 100, "flicker": True},
     "denon": {"host": denon.DEFAULT_HOST, "auto_power": False, "input": "DVD", "mode": "DIRECT",
               "volume_db": -35.0, "max_db": -15.0},
 }
@@ -118,6 +121,16 @@ def sanitize(cfg):
     am["volume"] = _num(am["volume"], 0, 1, d["ambience"]["volume"])
     am["on"] = bool(am["on"])
     am["active_hours_only"] = bool(am["active_hours_only"])
+    cfg["lights"] = {**d["lights"], **cfg.get("lights", {})}
+    li = cfg["lights"]
+    li["enabled"] = bool(li["enabled"])
+    li["flicker"] = bool(li["flicker"])
+    li["idle_brightness"] = _num(li["idle_brightness"], 0, 100, 15)
+    li["flash_brightness"] = _num(li["flash_brightness"], 1, 100, 100)
+    li["devices"] = [{"ip": str(x.get("ip", "")), "id": str(x.get("id", "")), "sku": str(x.get("sku", "")),
+                      "name": str(x.get("name") or x.get("sku") or "Light")[:30],
+                      "placement": str(x.get("placement") or "all"), "on": bool(x.get("on", True))}
+                     for x in li.get("devices") or [] if isinstance(x, dict) and x.get("ip")]
     cfg["denon"] = {**d["denon"], **cfg.get("denon", {})}
     dn = cfg["denon"]
     dn["max_db"] = _num(dn["max_db"], -80, 18, d["denon"]["max_db"])
@@ -495,6 +508,113 @@ class Ambience:
                 "want": self.want, "loading": bool(self.loading), "error": self.error}
 
 
+LIGHT_HZ = 8  # light updates per second
+
+
+def envelope(mono, hz=LIGHT_HZ):
+    """Loudness of a sound, 0..1, sampled hz times a second (drives the light flicker)."""
+    step = RATE // hz
+    n = len(mono) // step
+    if n == 0:
+        return np.array([1.0])
+    e = np.sqrt((mono[:n * step].reshape(n, step) ** 2).mean(axis=1))
+    return np.clip(e / (e.max() or 1), 0, 1)
+
+
+class Lights:
+    """Keeps Govee lights in step with the sounds.
+
+    Between scares every light sits at a dim "idle" color. When a sound plays, lights
+    assigned to that yard spot (or to "all") take on the sound's color and follow its
+    loudness. During a sweep each light brightens as the sound passes its spot.
+    """
+
+    def __init__(self, engine):
+        self.eng = engine
+        self.govee = govee.Govee()
+        self.event = None
+        self.tests = {}       # ip -> time a test flash ends
+        self.last = {}        # ip -> {"rgb", "bri", "on", "t"}
+        threading.Thread(target=self._loop, daemon=True).start()
+
+    def show(self, sound, mono, spot_ids, voice, sweep=False):
+        self.event = {"color": govee.color_for(sound), "env": envelope(mono), "spots": spot_ids,
+                      "voice": voice, "sweep": sweep and len(spot_ids) > 1, "len": max(1, len(mono))}
+
+    def test(self, ip):
+        self.tests[ip] = time.time() + 2.5
+
+    def forget(self):
+        self.last.clear()  # resend everything on the next tick (after settings change)
+
+    def _loop(self):
+        while True:
+            time.sleep(1 / LIGHT_HZ)
+            try:
+                self._tick()
+            except Exception as e:
+                self.eng.add_log(f"Lights hiccup: {e}")
+                time.sleep(2)
+
+    def _weight(self, dev, ev):
+        """How strongly this light should react to the current sound, 0..1."""
+        spots = ev["spots"]
+        if dev["placement"] == "all":
+            return 1.0
+        if dev["placement"] not in spots:
+            return 0.0
+        if not ev["sweep"]:
+            return 1.0
+        pos = ev["voice"]["pos"] / ev["len"] * (len(spots) - 1)
+        d = abs(pos - spots.index(dev["placement"]))
+        return float(np.cos(min(1.0, d) * np.pi / 2))
+
+    def _tick(self):
+        cfg = self.eng.config["lights"]
+        if not cfg["enabled"] or not cfg["devices"]:
+            return
+        ev = self.event
+        if ev and ev["voice"]["done"].is_set():
+            self.event = ev = None
+        idle_rgb = govee.hex_to_rgb(cfg["idle_color"])
+        idle_b = cfg["idle_brightness"]
+        flicker = cfg["flicker"] and self.eng.ambience.status()["playing"]
+        now = time.time()
+        for dev in cfg["devices"]:
+            ip = dev["ip"]
+            if not dev["on"]:
+                continue
+            if self.tests.get(ip, 0) > now:  # test flash: alternate orange and white
+                on_beat = int(now * 4) % 2 == 0
+                self._set(ip, (255, 90, 0) if on_beat else (255, 255, 255), 100)
+                continue
+            w = self._weight(dev, ev) if ev else 0.0
+            if w > 0.05:
+                env = ev["env"]
+                level = env[min(len(env) - 1, int(ev["voice"]["pos"] / (RATE / LIGHT_HZ)))]
+                bri = max(idle_b, 5) + (cfg["flash_brightness"] - max(idle_b, 5)) * level * w
+                self._set(ip, ev["color"], bri)
+            else:
+                b = idle_b * (random.uniform(0.55, 1.15) if flicker and idle_b else 1)
+                self._set(ip, idle_rgb, b)
+
+    def _set(self, ip, rgb, bri):
+        """Send only what changed (plus a refresh every 30 s in case someone used the Govee app)."""
+        now = time.time()
+        last = self.last.get(ip)
+        stale = last is None or now - last["t"] > 30
+        bri = int(round(bri))
+        want_on = bri > 0
+        if stale or last["on"] != want_on:
+            self.govee.power(ip, want_on)
+        if want_on:
+            if stale or last["rgb"] != rgb:
+                self.govee.color(ip, rgb)
+            if stale or abs(last["bri"] - bri) >= 3:
+                self.govee.brightness(ip, bri)
+        self.last[ip] = {"rgb": rgb, "bri": bri, "on": want_on, "t": now if stale else last["t"]}
+
+
 def search_stations(term):
     """Search the free, open radio-browser.info directory by tag, then by name."""
     params = {"hidebroken": "true", "order": "clickcount", "reverse": "true", "limit": "30"}
@@ -551,6 +671,7 @@ class Engine:
         threading.Thread(target=self._mix_loop, daemon=True).start()
         threading.Thread(target=self._schedule_loop, daemon=True).start()
         self.denon = denon.Denon()
+        self.lights = Lights(self)
         threading.Thread(target=self._denon_loop, daemon=True).start()
         self._start_sensor()
         self.add_log("Spooky engine started")
@@ -670,6 +791,7 @@ class Engine:
         v = self._add_voice(render(mono, gains))
         self.now_playing = {"sound": sound, "spots": [p["id"] for p in spots], "voice": v,
                             "sweep": creep, "samples": len(mono)}
+        self.lights.show(sound, mono, [p["id"] for p in spots], v, sweep=creep)
         names = " → ".join(p["name"] for p in spots) if creep else spots[0]["name"]
         self.add_log(f"{Path(sound).stem} {'creeping ' if creep else 'from the '}{names}")
         return v
@@ -787,6 +909,7 @@ class Engine:
         v = self._add_voice(render(mono, gains))
         self.now_playing = {"sound": sound, "spots": [p["id"] for p in spots], "voice": v,
                             "sweep": True, "samples": len(mono)}
+        self.lights.show(sound, mono, [p["id"] for p in spots], v, sweep=True)
         self.add_log(f"{Path(sound).stem} sweeping {spots[0]['name']} → {spots[-1]['name']}")
         return None, v
 
@@ -923,6 +1046,26 @@ class Engine:
                 self.denon.refresh(self.config["denon"]["host"])
         return None
 
+    # -- Govee lights
+    def find_lights(self):
+        """Look for Govee lights on the network and add any new ones (keeps names and spots)."""
+        found = govee.discover()
+        devices = list(self.config["lights"]["devices"])
+        known = {d["id"]: d for d in devices if d["id"]}
+        added = 0
+        for f in found:
+            if f["id"] in known:
+                known[f["id"]]["ip"] = f["ip"]   # it may have a new address
+            else:
+                devices.append({"ip": f["ip"], "id": f["id"], "sku": f["sku"],
+                                "name": f"{f['sku']} …{f['id'][-5:].replace(':', '')}" if f["id"] else f["sku"],
+                                "placement": "all", "on": True})
+                added += 1
+        self.update_config({"lights": {"devices": devices}})
+        self.lights.forget()
+        self.add_log(f"Found {len(found)} Govee light(s), {added} new")
+        return found
+
     # -- radio
     def play_radio(self, url, name):
         self.radio.start(url, name)
@@ -941,7 +1084,7 @@ class Engine:
         with self.lock:
             cfg = copy.deepcopy(self.config)
             for k, v in patch.items():
-                if k in ("radio", "denon", "ambience") and isinstance(v, dict):
+                if k in ("radio", "denon", "ambience", "lights") and isinstance(v, dict):
                     cfg[k].update(v)
                 elif k in DEFAULT_CONFIG:
                     cfg[k] = v

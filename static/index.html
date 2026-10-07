@@ -100,6 +100,28 @@
     </details>
   </section>
 
+  <!-- Govee lights -->
+  <section class="panel">
+    <h2>Govee Lights</h2>
+    <p class="hint">Lights flare and flicker with the sounds. Give each light a yard spot so it reacts when that speaker plays (or <b>All spots</b> to react to everything). Turn on <b>LAN Control</b> for each light in the Govee Home app first.</p>
+    <label class="toggle"><input type="checkbox" id="lightsOn"><span>Sync lights with the sounds</span></label>
+    <div class="lights" id="lightsList"></div>
+    <button class="btn" id="lightsFind">🔍 Find lights</button>
+    <div class="grid2 radio-settings">
+      <fieldset>
+        <legend>Between scares</legend>
+        <label class="field">Idle color <input type="color" id="lightsIdleColor"></label>
+        <label class="slider-row"><span>Idle brightness</span><input type="range" id="lightsIdle" min="0" max="100" step="1"><output id="lightsIdleOut"></output></label>
+        <label class="toggle"><input type="checkbox" id="lightsFlicker"><span>Flicker while an atmosphere plays</span></label>
+      </fieldset>
+      <fieldset>
+        <legend>During a scare</legend>
+        <label class="slider-row"><span>Flash brightness</span><input type="range" id="lightsFlash" min="1" max="100" step="1"><output id="lightsFlashOut"></output></label>
+        <div class="muted small">Colors follow the sound: white for thunder, red for growls and monsters, green for witches and zombies, blue for ghosts, orange for everything else.</div>
+      </fieldset>
+    </div>
+  </section>
+
   <!-- Background atmosphere -->
   <section class="panel">
     <h2>Background Atmosphere</h2>

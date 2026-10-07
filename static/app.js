@@ -37,11 +37,11 @@ function toast(msg) {
 
 // Merge a change into the config and save it shortly after (debounced)
 function save(patch) {
-  const { radio, denon: dn, ambience, ...rest } = patch;
+  const { radio, denon: dn, ambience, lights, ...rest } = patch;
   Object.assign(cfg, rest);
   pending = { ...pending, ...rest };
   showSaved("Saving…");
-  for (const [k, v] of [["radio", radio], ["denon", dn], ["ambience", ambience]]) {
+  for (const [k, v] of [["radio", radio], ["denon", dn], ["ambience", ambience], ["lights", lights]]) {
     if (!v) continue;
     cfg[k] = { ...cfg[k], ...v };
     pending[k] = { ...(pending[k] || {}), ...v };
@@ -156,7 +156,7 @@ function renderPlacements() {
     const [nameIn, enabledIn] = card.querySelectorAll("input");
     const chSel = card.querySelector("select");
     const vol = card.querySelector("input[type=range]");
-    nameIn.oninput = () => { P().name = nameIn.value; savePlacements(); renderYard(); renderMatrix(true); renderRadioSpots(); renderAtmosSettings(); renderSweepOrder(); };
+    nameIn.oninput = () => { P().name = nameIn.value; savePlacements(); renderYard(); renderMatrix(true); renderRadioSpots(); renderAtmosSettings(); renderSweepOrder(); renderLights(); };
     nameIn.onblur = () => { if (!nameIn.value.trim()) { nameIn.value = P().name = `Speaker ${i + 1}`; savePlacements(); renderYard(); } };
     nameIn.onkeydown = (e) => { if (e.key === "Enter") nameIn.blur(); };
     enabledIn.onchange = () => { P().enabled = enabledIn.checked; card.classList.toggle("off", !enabledIn.checked); savePlacements(); renderYard(); renderMatrix(true); renderSweepOrder(); };
@@ -351,6 +351,51 @@ function stopPreview() {
 
 function markPreview() {
   document.querySelectorAll("[data-preview]").forEach((b) => b.classList.toggle("previewing", b.dataset.preview === previewName));
+}
+
+// ---------- Govee lights ----------
+
+function renderLights() {
+  const li = cfg.lights;
+  $("lightsOn").checked = li.enabled;
+  $("lightsIdleColor").value = li.idle_color;
+  setSlider("lightsIdle", li.idle_brightness);
+  $("lightsIdleOut").textContent = li.idle_brightness + "%";
+  setSlider("lightsFlash", li.flash_brightness);
+  $("lightsFlashOut").textContent = li.flash_brightness + "%";
+  $("lightsFlicker").checked = li.flicker;
+  const box = $("lightsList");
+  if (!li.devices.length) {
+    box.innerHTML = `<p class="muted small">No lights yet. Press <b>Find lights</b>.</p>`;
+    return;
+  }
+  const spotOptions = (sel) => [`<option value="all" ${sel === "all" ? "selected" : ""}>All spots</option>`,
+    ...cfg.placements.map((p) => `<option value="${p.id}" ${sel === p.id ? "selected" : ""}>${esc(p.name)}${p.enabled ? "" : " (off)"}</option>`)].join("");
+  box.innerHTML = li.devices.map((d, i) => `
+    <div class="light-row ${d.on ? "" : "off"}" data-i="${i}">
+      <span class="bulb">💡</span>
+      <div><input type="text" value="${esc(d.name)}" maxlength="30" aria-label="Light name"><div class="meta">${esc(d.sku)} · ${esc(d.ip)}</div></div>
+      <select aria-label="Yard spot">${spotOptions(d.placement)}</select>
+      <label class="switch" title="Use this light"><input type="checkbox" ${d.on ? "checked" : ""}><span></span></label>
+      <button class="btn small" data-test>Test</button>
+    </div>`).join("");
+  box.querySelectorAll(".light-row").forEach((row) => {
+    const d = () => cfg.lights.devices[+row.dataset.i];
+    const saveDevices = () => save({ lights: { devices: cfg.lights.devices } });
+    row.querySelector("input[type=text]").oninput = (e) => { d().name = e.target.value; saveDevices(); };
+    row.querySelector("select").onchange = (e) => { d().placement = e.target.value; saveDevices(); };
+    row.querySelector(".switch input").onchange = (e) => { d().on = e.target.checked; row.classList.toggle("off", !d().on); saveDevices(); };
+    row.querySelector("[data-test]").onclick = () => { api("/api/lights/test", { ip: d().ip }); toast(`Flashing ${d().name}`); };
+  });
+}
+
+async function findLights() {
+  toast("Looking for Govee lights…");
+  const r = await api("/api/lights/find", {});
+  if (!r.ok) return toast(r.error);
+  cfg.lights = r.lights;
+  renderLights();
+  toast(r.found ? `Found ${r.found} light(s)` : "No lights answered. Is LAN Control on in the Govee app?");
 }
 
 // ---------- Background atmosphere ----------
@@ -562,7 +607,7 @@ async function refresh() {
   }
   if (!cfg) {
     cfg = state.config;
-    renderYard(); renderPlacements(); renderTiming(); renderRadioSettings(); renderMatrix(true); renderDenonSettings(); renderAtmos(true); renderAtmosSettings(); renderSweep(); renderSweepOrder();
+    renderYard(); renderPlacements(); renderTiming(); renderRadioSettings(); renderMatrix(true); renderDenonSettings(); renderAtmos(true); renderAtmosSettings(); renderSweep(); renderSweepOrder(); renderLights();
   } else {
     const before = soundsKey;
     renderMatrix(false);
@@ -586,6 +631,12 @@ function wire() {
   $("sweepRtl").onclick = () => doSweep("rtl");
   $("sweepSecs").oninput = () => { setSweepSecs(+$("sweepSecs").value); save({ sweep_seconds: +$("sweepSecs").value }); };
   $("sweepSound").onchange = () => save({ sweep_sound: $("sweepSound").value });
+  $("lightsFind").onclick = findLights;
+  $("lightsOn").onchange = () => save({ lights: { enabled: $("lightsOn").checked } });
+  $("lightsIdleColor").oninput = () => save({ lights: { idle_color: $("lightsIdleColor").value } });
+  $("lightsIdle").oninput = () => { $("lightsIdleOut").textContent = $("lightsIdle").value + "%"; save({ lights: { idle_brightness: +$("lightsIdle").value } }); };
+  $("lightsFlash").oninput = () => { $("lightsFlashOut").textContent = $("lightsFlash").value + "%"; save({ lights: { flash_brightness: +$("lightsFlash").value } }); };
+  $("lightsFlicker").onchange = () => save({ lights: { flicker: $("lightsFlicker").checked } });
   $("motionBtn").onclick = async () => { await api("/api/motion", {}); setTimeout(refresh, 150); };
   $("stopBtn").onclick = async () => { await api("/api/stop", { radio: true }); toast("Silence."); refresh(); };
   $("master").oninput = () => { setSlider("master", +$("master").value, true); save({ master_volume: +$("master").value }); };
