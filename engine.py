@@ -61,6 +61,7 @@ DEFAULT_CONFIG = {
     "active_end": "23:00",
     "pir_pin": 17,
     "disabled_sounds": [],            # sounds switched off everywhere (still playable by hand)
+    "sound_colors": {},               # light color per sound ("#rrggbb"); others pick by name
     "placements": [
         {"id": f"p{i + 1}", "name": name, "terminal": term, "channel": ch,
          "enabled": i < 2, "volume": 1.0, "muted_sounds": [], "x": MAP_SPOTS[i][0], "y": MAP_SPOTS[i][1]}
@@ -71,7 +72,8 @@ DEFAULT_CONFIG = {
     "ambience": {"on": False, "track": "graveyard.mp3", "volume": 0.4,
                  "placements": [f"p{i + 1}" for i in range(7)], "active_hours_only": True},
     "lights": {"enabled": False, "devices": [], "idle_color": "#ff5a00", "idle_brightness": 50,
-               "flash_brightness": 100, "flicker": True},
+               "flash_brightness": 100, "flicker": True,
+               "ripple": 0.25},   # how much lights away from the sound still react (0..1)
     "denon": {"host": denon.DEFAULT_HOST, "auto_power": False, "input": "DVD", "mode": "DIRECT",
               "volume_db": -35.0, "max_db": -15.0},
 }
@@ -101,6 +103,8 @@ def sanitize(cfg):
         cfg[k] = _num(cfg.get(k), 0, 1, d[k])
     cfg["active_hours_enabled"] = bool(cfg.get("active_hours_enabled"))
     cfg["disabled_sounds"] = [str(x) for x in (cfg.get("disabled_sounds") or [])]
+    cfg["sound_colors"] = {str(k): str(v) for k, v in (cfg.get("sound_colors") or {}).items()
+                           if isinstance(v, str) and len(v) == 7 and v.startswith("#")}
     by_id = {p.get("id"): p for p in cfg.get("placements", [])}
     placements = []
     for default in d["placements"]:
@@ -127,6 +131,7 @@ def sanitize(cfg):
     li["flicker"] = bool(li["flicker"])
     li["idle_brightness"] = _num(li["idle_brightness"], 0, 100, 15)
     li["flash_brightness"] = _num(li["flash_brightness"], 1, 100, 100)
+    li["ripple"] = _num(li.get("ripple"), 0, 1, 0.25)
     li["devices"] = [{"ip": str(x.get("ip", "")), "id": str(x.get("id", "")), "sku": str(x.get("sku", "")),
                       "name": str(x.get("name") or x.get("sku") or "Light")[:30],
                       "placement": str(x.get("placement") or "all"), "on": bool(x.get("on", True)),
@@ -543,7 +548,7 @@ class Lights:
         threading.Thread(target=self._loop, daemon=True).start()
 
     def show(self, sound, mono, spot_ids, voice, sweep=False):
-        self.event = {"color": govee.color_for(sound), "env": envelope(mono), "spots": spot_ids,
+        self.event = {"color": self.eng.light_color(sound), "env": envelope(mono), "spots": spot_ids,
                       "voice": voice, "sweep": sweep and len(spot_ids) > 1, "len": max(1, len(mono))}
 
     def test(self, ip):
@@ -602,11 +607,16 @@ class Lights:
                 self._set(ip, (255, 90, 0) if on_beat else (255, 255, 255), 100)
                 continue
             w = self._weight(dev, ev) if ev else 0.0
-            if w > 0.05:
+            if ev:
                 env = ev["env"]
                 level = env[min(len(env) - 1, int(ev["voice"]["pos"] / (RATE / LIGHT_HZ)))]
+            if w > 0.05:
                 bri = max(idle_b, 5) + (cfg["flash_brightness"] - max(idle_b, 5)) * level * w
                 self._set(ip, ev["color"], bri)
+            elif ev and cfg["ripple"] > 0:  # not this light's spot: still ripple a little with the sound
+                r = cfg["ripple"] * (0.3 + 0.7 * level) * random.uniform(0.8, 1.0)
+                rgb = tuple(int(a * (1 - r) + b * r) for a, b in zip(idle_rgb, ev["color"]))
+                self._set(ip, rgb, max(idle_b, 5) + (cfg["flash_brightness"] - max(idle_b, 5)) * r)
             else:
                 b = idle_b * (random.uniform(0.55, 1.15) if flicker and idle_b else 1)
                 self._set(ip, idle_rgb, b)
@@ -653,13 +663,18 @@ class Lights:
             ev_center = self._event_center(ev, positions)
             color = np.array(ev["color"], dtype=float) * (self.eng.config["lights"]["flash_brightness"] / 100)
             env = ev["env"]
-            level = 0.45 + 0.55 * env[min(len(env) - 1, int(ev["voice"]["pos"] / (RATE / LIGHT_HZ)))]
+            loud = env[min(len(env) - 1, int(ev["voice"]["pos"] / (RATE / LIGHT_HZ)))]
+            level = (0.45 + 0.55 * loud) * random.uniform(0.85, 1.0)   # follows the sound, with a flame-like flicker
+            ripple = self.eng.config["lights"]["ripple"] * (0.3 + 0.7 * loud)
         else:
             ev_center = None
         if ev_center is not None:
             seg_pos = (1 - ev_center if dev["reverse"] else ev_center) * (n - 1)
             d = np.abs(np.arange(n) - seg_pos)
-            w = (np.exp(-(d / 0.6) ** 2) * level)[:, None]   # only the light(s) right next to the sound
+            w = np.exp(-(d / 0.6) ** 2) * level             # the light(s) right next to the sound
+            if ev and not self.tests.get(ip, 0) > now:       # every other light ripples a little
+                w = np.maximum(w, ripple * np.random.uniform(0.75, 1.0, n))
+            w = w[:, None]
             target = target * (1 - w) + color * w
 
         # Ease toward the target so bulbs fade in and out instead of snapping
@@ -771,6 +786,11 @@ class Engine:
                 self.add_log(f"Couldn't load {p.name}: {e}")
         with self.lock:
             self.sounds = found
+
+    def light_color(self, sound):
+        """The color lights flash for a sound: the one picked on the dashboard, or one chosen by its name."""
+        custom = self.config["sound_colors"].get(sound)
+        return govee.hex_to_rgb(custom) if custom else govee.color_for(sound)
 
     def allowed(self, placement, include_off=False):
         """Sounds this speaker may play. Sounds switched off entirely are left out unless include_off."""
@@ -1181,7 +1201,8 @@ class Engine:
         return {
             "config": cfg,
             "ambience": self.ambience_tracks(),
-            "sounds": [{"name": n, "label": Path(n).stem, "seconds": round(len(m) / RATE, 1)}
+            "sounds": [{"name": n, "label": Path(n).stem, "seconds": round(len(m) / RATE, 1),
+                        "color": "#%02x%02x%02x" % self.light_color(n), "custom_color": n in cfg["sound_colors"]}
                        for n, m in self.sounds.items()],
             "status": {
                 "now_playing": np_,

@@ -117,6 +117,8 @@
       <fieldset>
         <legend>During a scare</legend>
         <label class="slider-row"><span>Flash brightness</span><input type="range" id="lightsFlash" min="1" max="100" step="1"><output id="lightsFlashOut"></output></label>
+        <label class="slider-row"><span>Other lights react</span><input type="range" id="lightsRipple" min="0" max="1" step="0.05"><output id="lightsRippleOut"></output></label>
+        <div class="muted small">How much the lights away from the sound still flicker and tint along with it. 0% = only the nearest light reacts.</div>
         <div class="muted small">Colors follow the sound: white for thunder, red for growls and monsters, green for witches and zombies, blue for ghosts, orange for everything else.</div>
       </fieldset>
     </div>
@@ -195,7 +197,7 @@
   <!-- Sound matrix -->
   <section class="panel">
     <h2>Sounds × Speakers</h2>
-    <p class="hint"><b>On</b> switches a sound off everywhere at once (your speaker checkboxes are kept). <b>Sweep</b> makes that sound travel across the whole yard every time it plays. ▶ plays it in the yard; 🎧 previews it on this device only. Checked = this sound can play from that speaker.</p>
+    <p class="hint"><b>On</b> switches a sound off everywhere at once (your speaker checkboxes are kept). <b>Sweep</b> makes that sound travel across the whole yard every time it plays. <b>Light</b> picks the color the Govee lights flash for that sound (↺ goes back to the automatic color). ▶ plays it in the yard; 🎧 previews it on this device only. Checked = this sound can play from that speaker.</p>
     <div class="table-wrap"><table class="matrix" id="matrix"></table></div>
     <div class="upload">
       <label class="btn" for="fileInput">⬆ Add sounds</label>

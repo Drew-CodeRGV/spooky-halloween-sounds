@@ -187,10 +187,11 @@ function renderMatrix(force) {
       <td class="name"><button class="icon-btn" data-play="${esc(s.name)}" title="Play in the yard">▶</button><button class="icon-btn preview-btn" data-preview="${esc(s.name)}" title="Preview on this device (not in the yard)">🎧</button>${esc(s.label)}<small>${s.seconds}s</small></td>
       <td class="onoff"><label class="switch" title="Turn this sound on or off everywhere"><input type="checkbox" data-onoff="${esc(s.name)}" ${isOff(s.name) ? "" : "checked"}><span></span></label></td>
       <td class="onoff"><label class="switch sweep" title="Always sweep this sound across the whole yard"><input type="checkbox" data-sweep="${esc(s.name)}" ${sweeps(s.name) ? "checked" : ""}><span></span></label></td>
+      <td class="onoff light-color"><input type="color" data-color="${esc(s.name)}" value="${s.color}" title="Light color for this sound${s.custom_color ? "" : " (automatic)"}"><button class="icon-btn reset-color ${s.custom_color ? "" : "hidden"}" data-reset="${esc(s.name)}" title="Back to the automatic color">↺</button></td>
       ${cells}
       <td><button class="icon-btn" data-del="${esc(s.name)}" title="Remove sound">🗑</button></td></tr>`;
   }).join("");
-  t.innerHTML = `<thead><tr><th style="text-align:left">Sound</th><th>On</th><th>Sweep</th>${head}<th></th></tr></thead><tbody>${rows}</tbody>`;
+  t.innerHTML = `<thead><tr><th style="text-align:left">Sound</th><th>On</th><th>Sweep</th><th>Light</th>${head}<th></th></tr></thead><tbody>${rows}</tbody>`;
   t.querySelectorAll("[data-onoff]").forEach((cb) => {
     cb.onchange = () => {
       const name = cb.dataset.onoff;
@@ -199,6 +200,22 @@ function renderMatrix(force) {
       cb.closest("tr").classList.toggle("sound-off", !cb.checked);
     };
   });
+  t.querySelectorAll("[data-color]").forEach((inp) => {
+    inp.oninput = () => {
+      save({ sound_colors: { ...cfg.sound_colors, [inp.dataset.color]: inp.value } });
+      inp.nextElementSibling.classList.remove("hidden");
+      inp.title = "Light color for this sound";
+    };
+  });
+  t.querySelectorAll("[data-reset]").forEach((b) => (b.onclick = async () => {
+    const { [b.dataset.reset]: _, ...rest } = cfg.sound_colors;
+    save({ sound_colors: rest });
+    b.classList.add("hidden");
+    setTimeout(async () => {   // show the automatic color again
+      state = await api("/api/state");
+      renderMatrix(true);
+    }, 600);
+  }));
   t.querySelectorAll("[data-sweep]").forEach((cb) => {
     cb.onchange = () => {
       const name = cb.dataset.sweep;
@@ -364,6 +381,7 @@ function renderLights() {
   setSlider("lightsFlash", li.flash_brightness);
   $("lightsFlashOut").textContent = li.flash_brightness + "%";
   $("lightsFlicker").checked = li.flicker;
+  setSlider("lightsRipple", li.ripple, true);
   const box = $("lightsList");
   if (!li.devices.length) {
     box.innerHTML = `<p class="muted small">No lights yet. Press <b>Find lights</b>.</p>`;
@@ -653,6 +671,7 @@ function wire() {
   $("lightsIdle").oninput = () => { $("lightsIdleOut").textContent = $("lightsIdle").value + "%"; save({ lights: { idle_brightness: +$("lightsIdle").value } }); };
   $("lightsFlash").oninput = () => { $("lightsFlashOut").textContent = $("lightsFlash").value + "%"; save({ lights: { flash_brightness: +$("lightsFlash").value } }); };
   $("lightsFlicker").onchange = () => save({ lights: { flicker: $("lightsFlicker").checked } });
+  $("lightsRipple").oninput = () => { setSlider("lightsRipple", +$("lightsRipple").value, true); save({ lights: { ripple: +$("lightsRipple").value } }); };
   $("motionBtn").onclick = async () => { await api("/api/motion", {}); setTimeout(refresh, 150); };
   $("stopBtn").onclick = async () => { await api("/api/stop", { radio: true }); toast("Silence."); refresh(); };
   $("master").oninput = () => { setSlider("master", +$("master").value, true); save({ master_volume: +$("master").value }); };
