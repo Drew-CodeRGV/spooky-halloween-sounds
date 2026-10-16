@@ -55,7 +55,7 @@
   <!-- Yard map -->
   <section class="panel">
     <h2>The Yard</h2>
-    <p class="hint"><b>Drag</b> each speaker to where it really is in your yard. <b>Tap</b> one to play a sound there. Glowing = playing now. 🎵 = radio. Sweeps and creeps travel left to right across this map.</p>
+    <p class="hint"><b>Drag</b> each speaker to where it really is in your yard. <b>Tap</b> one to play a sound there. Glowing = playing now. 🎵 = radio. Sweeps and creeps travel left to right across this map. The dotted lines at the top are your Govee light chains, each over the part of the yard it covers.</p>
     <div class="yard" id="yard">
       <div class="house"><div class="roof"></div><div class="door"></div><span>House</span></div>
       <div class="sidewalk">sidewalk · trick-or-treaters walk here</div>
@@ -142,7 +142,7 @@
   <!-- Govee lights -->
   <section class="panel">
     <h2>Govee Lights</h2>
-    <p class="hint">Lights flare and flicker with the sounds. Give each light a yard spot so it reacts when that speaker plays (or <b>All spots</b> to react to everything). For a string of bulbs running across the yard, turn on <b>Chain across the yard</b>: only the bulbs nearest each sound light up, and sweeps travel along it. Turn on <b>LAN Control</b> for each light in the Govee Home app first.</p>
+    <p class="hint">Lights flare and flicker with the sounds. Give each light a yard spot so it reacts when that speaker plays (or <b>All spots</b> to react to everything). For a string of bulbs, turn on <b>Chain across the yard</b>: only the bulbs nearest each sound light up, and sweeps travel along them. Tell each string <b>which part of the yard it covers</b> (0% = west, 100% = east) so a scare in the east doesn't light the string in the west. Several strings are numbered as one run — a 4-bulb string in the west is bulbs 1-4, the next one east is 5-8 — and you can see them on the yard map. Turn on <b>LAN Control</b> for each light in the Govee Home app first.</p>
     <label class="toggle"><input type="checkbox" id="lightsOn"><span>Sync lights with the sounds</span></label>
     <div class="lights" id="lightsList"></div>
     <button class="btn" id="lightsFind">🔍 Find lights</button>

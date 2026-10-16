@@ -70,9 +70,36 @@ function showSaved(text, bad) {
 
 // ---------- Rendering ----------
 
+// The chains in west-to-east order, with the bulb number each one starts at,
+// so two strings read as one run across the yard (1-4 west, then 5-8 east).
+function chains() {
+  let n = 1;
+  if (!cfg || !cfg.lights) return [];
+  return cfg.lights.devices.map((d, i) => ({ d, i }))
+    .filter((c) => c.d.chain)
+    .sort((a, b) => a.d.span_start - b.d.span_start || a.i - b.i)
+    .map((c) => ({ ...c, first: (n += c.d.segments) - c.d.segments, last: n - 1 }));
+}
+
 function renderYard() {
   const yard = $("yard");
-  yard.querySelectorAll(".spot").forEach((n) => n.remove());
+  yard.querySelectorAll(".spot, .chain-line").forEach((n) => n.remove());
+  const rows = [];   // chains that don't cover the same ground share a line
+  chains().forEach((c) => {
+    const { d } = c;
+    let row = rows.findIndex((taken) => taken <= d.span_start);
+    if (row < 0) row = rows.length;
+    rows[row] = d.span_end;
+    const line = document.createElement("div");
+    line.className = "chain-line" + (d.on && cfg.lights.enabled ? "" : " off");
+    line.style.left = d.span_start + "%";
+    line.style.width = (d.span_end - d.span_start) + "%";
+    line.style.top = 6 + row * 20 + "px";
+    line.title = `${d.name}: bulbs ${c.first}-${c.last} across ${Math.round(d.span_start)}-${Math.round(d.span_end)}% of the yard`;
+    const nums = Array.from({ length: d.segments }, (_, k) => (d.reverse ? c.last - k : c.first + k));
+    line.innerHTML = nums.map((num) => `<span class="bulb-dot">${num}</span>`).join("");
+    yard.appendChild(line);
+  });
   cfg.placements.forEach((p, i) => {
     const b = document.createElement("button");
     b.className = "spot";
@@ -441,6 +468,8 @@ function renderLights() {
     box.innerHTML = `<p class="muted small">No lights yet. Press <b>Find lights</b>.</p>`;
     return;
   }
+  const first = {}, last = {};
+  chains().forEach((c) => { first[c.i] = c.first; last[c.i] = c.last; });
   const spotOptions = (sel) => [`<option value="all" ${sel === "all" ? "selected" : ""}>All spots</option>`,
     ...cfg.placements.map((p) => `<option value="${p.id}" ${sel === p.id ? "selected" : ""}>${esc(p.name)}${p.enabled ? "" : " (off)"}</option>`)].join("");
   box.innerHTML = li.devices.map((d, i) => `
@@ -454,24 +483,44 @@ function renderLights() {
         <label class="toggle"><input type="checkbox" data-chain ${d.chain ? "checked" : ""}><span>Chain across the yard: light only the bulbs nearest each sound, and follow sweeps</span></label>
         <span class="chain-detail ${d.chain ? "" : "hidden"}">
           <label title="One per light or bulb section in the chain">Segments <input type="number" data-segs min="2" max="100" value="${d.segments}"></label>
+          <label title="0% = the west edge of the yard map, 100% = the east edge">Covers the yard from
+            <input type="number" data-span0 min="0" max="100" step="1" value="${Math.round(d.span_start)}">% to
+            <input type="number" data-span1 min="0" max="100" step="1" value="${Math.round(d.span_end)}">%</label>
+          <span class="chain-presets">
+            <button class="btn small" data-span="0,50">West half</button>
+            <button class="btn small" data-span="50,100">East half</button>
+            <button class="btn small" data-span="0,100">Whole yard</button>
+          </span>
           <label class="toggle"><input type="checkbox" data-rev ${d.reverse ? "checked" : ""}><span>First bulb is on the east end</span></label>
+          <span class="chain-nums">${d.chain ? `Bulbs ${first[i]}-${last[i]}` : ""}</span>
         </span>
       </div>
     </div>`).join("");
   box.querySelectorAll(".light-row").forEach((row) => {
     const d = () => cfg.lights.devices[+row.dataset.i];
     const saveDevices = () => save({ lights: { devices: cfg.lights.devices } });
+    // changing a span or a segment count renumbers the other chains too, so redraw both views
+    const saveAndRedraw = () => { saveDevices(); renderLights(); renderYard(); };
+    const setSpan = (a, b) => {
+      const d0 = d();
+      d0.span_start = Math.min(95, Math.max(0, Math.min(a, b)));
+      d0.span_end = Math.min(100, Math.max(d0.span_start + 5, Math.max(a, b)));
+      saveAndRedraw();
+    };
     row.querySelector("input[type=text]").oninput = (e) => { d().name = e.target.value; saveDevices(); };
     row.querySelector("select").onchange = (e) => { d().placement = e.target.value; saveDevices(); };
-    row.querySelector(".switch input").onchange = (e) => { d().on = e.target.checked; row.classList.toggle("off", !d().on); saveDevices(); };
+    row.querySelector(".switch input").onchange = (e) => { d().on = e.target.checked; row.classList.toggle("off", !d().on); saveDevices(); renderYard(); };
     row.querySelector("[data-chain]").onchange = (e) => {
       d().chain = e.target.checked;
-      row.querySelector(".chain-detail").classList.toggle("hidden", !d().chain);
-      row.querySelector("select").disabled = d().chain;
-      saveDevices();
+      saveAndRedraw();
     };
-    row.querySelector("[data-segs]").onchange = (e) => { d().segments = Math.max(2, Math.min(100, +e.target.value || 4)); saveDevices(); };
-    row.querySelector("[data-rev]").onchange = (e) => { d().reverse = e.target.checked; saveDevices(); };
+    row.querySelector("[data-segs]").onchange = (e) => { d().segments = Math.max(2, Math.min(100, +e.target.value || 4)); saveAndRedraw(); };
+    row.querySelector("[data-rev]").onchange = (e) => { d().reverse = e.target.checked; saveAndRedraw(); };
+    const span = () => [+row.querySelector("[data-span0]").value || 0, +row.querySelector("[data-span1]").value || 0];
+    row.querySelectorAll("[data-span0], [data-span1]").forEach((el) => { el.onchange = () => setSpan(...span()); });
+    row.querySelectorAll("[data-span]").forEach((b) => {
+      b.onclick = () => setSpan(...b.dataset.span.split(",").map(Number));
+    });
     row.querySelector("select").disabled = d().chain;
     row.querySelector("[data-test]").onclick = () => { api("/api/lights/test", { ip: d().ip }); toast(`Flashing ${d().name}`); };
   });

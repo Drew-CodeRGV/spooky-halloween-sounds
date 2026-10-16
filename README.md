@@ -63,6 +63,21 @@ Set the sensor's jumper to "single trigger". The two knobs adjust sensitivity an
 3. **Sounds × Speakers:** uncheck any sound you don't want from a given spot. For example, keep the dog barks by the gate and the ghost moans by the porch.
 4. **Denon Receiver:** the Pi finds the Denon on its own. **Get ready** turns it on and sets the input, sound mode and volume you chose. **Never louder than** caps the volume so nobody can blast the yard from their phone. With the auto option on, the Denon turns on when active hours start and goes to standby when they end.
 5. **Halloween Radio:** search or tap a tag, then press Play. Choose which speakers the radio plays on. With "Radio replaces the spooky sounds" on, scares pause while the radio plays.
+6. **Govee Lights:** press **Find lights**, then give each light a yard spot so it flares when that speaker plays.
+
+## Govee light chains
+A string of bulbs is one light to Govee but many points in the yard, so turn on **Chain across the yard** for it. Only the bulbs nearest each sound light up, and sweeps travel along the string.
+
+Because a string usually covers only part of the yard, each one has a **span**: *covers the yard from X% to Y%*, where 0% is the west edge of the yard map and 100% is the east edge. A sound outside a string's span leaves it at its idle ripple, and the bulb at the near end glows as the sound comes closer.
+
+Two strings, old in the west and new in the east:
+
+| String | Chain | Segments | Covers | Bulbs |
+|---|---|---|---|---|
+| Old (west) | on | 4 | 0% to 50% | 1-4 |
+| New (east) | on | 4 | 50% to 100% | 5-8 |
+
+The bulbs are numbered as one run from west to east, so the two strings read as bulbs 1 through 8. **First bulb is on the east end** flips a string whose plug is at the far end. The yard map draws each chain as a dotted line over the part of the yard it covers, with its bulb numbers, so you can check it matches what's really outside.
 
 ## Sounds
 The repo comes with original sounds, all made from scratch by `make_spooky_sounds.py`, so they're free to use and share:

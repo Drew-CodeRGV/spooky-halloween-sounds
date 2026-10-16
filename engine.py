@@ -158,8 +158,14 @@ def sanitize(cfg):
                       # a chain of bulbs strung across the yard, first bulb at the west end
                       "chain": bool(x.get("chain", False)),
                       "segments": int(_num(x.get("segments"), 2, 100, 4)),
-                      "reverse": bool(x.get("reverse", False))}
+                      "reverse": bool(x.get("reverse", False)),
+                      # the slice of the yard map this chain really covers, 0 = west fence, 100 = east
+                      "span_start": _num(x.get("span_start"), 0, 100, 0.0),
+                      "span_end": _num(x.get("span_end"), 0, 100, 100.0)}
                      for x in li.get("devices") or [] if isinstance(x, dict) and x.get("ip")]
+    for dev in li["devices"]:   # west edge first, and never a chain squeezed down to nothing
+        a, b = sorted((dev["span_start"], dev["span_end"]))
+        dev["span_start"], dev["span_end"] = min(a, 95.0), max(b, min(a, 95.0) + 5)
     cfg["ring"] = {**d["ring"], **cfg.get("ring", {})}
     rg = cfg["ring"]
     for k in ("enabled", "active_hours_only", "motion_on", "ding_on"):
@@ -692,12 +698,19 @@ class Lights:
                 self._set(ip, idle_rgb, b)
 
     def _chain_positions(self):
-        """Where each turned-on speaker sits along the chain: 0 = west end, 1 = east end (from the yard map)."""
-        spots = [p for p in self.eng.config["placements"] if p["enabled"]]
-        if not spots:
-            return {}
-        lo, hi = min(p["x"] for p in spots), max(p["x"] for p in spots)
-        return {p["id"]: (p["x"] - lo) / (hi - lo) if hi > lo else 0.5 for p in spots}
+        """Where each turned-on speaker sits across the yard map: 0 = west fence, 1 = east fence."""
+        return {p["id"]: p["x"] / 100 for p in self.eng.config["placements"] if p["enabled"]}
+
+    def _along_chain(self, dev, center):
+        """Where a sound falls along one chain: 0 = its first bulb, 1 = its last.
+
+        Chains can cover just part of the yard (say the old string west, the new one east),
+        so this comes back outside 0..1 when the sound is past the end of this chain. The
+        falloff below then leaves it dark apart from the ripple, and only the bulb nearest
+        the sound glows as it comes closer.
+        """
+        lo, hi = dev["span_start"] / 100, dev["span_end"] / 100
+        return (center - lo) / (hi - lo) if hi > lo else 0.5
 
     def _event_center(self, ev, positions):
         """Where along the chain the current sound is (0..1), following sweeps as they travel."""
@@ -726,23 +739,24 @@ class Lights:
         target = np.tile(idle, (n, 1))
         if flicker and idle_b:
             target *= np.random.uniform(0.6, 1.1, (n, 1))
-        if self.tests.get(ip, 0) > now:      # test flash: a spot running end to end
-            pos = (now * 0.8) % 1.0
-            ev_center, color, level = pos, np.array((255, 90, 0), float), 1.0
+        testing = self.tests.get(ip, 0) > now
+        if testing:                          # test flash: a spot running end to end of this chain
+            along, color, level = (now * 0.8) % 1.0, np.array((255, 90, 0), float), 1.0
         elif ev:
-            ev_center = self._event_center(ev, positions)
+            center = self._event_center(ev, positions)
+            along = None if center is None else self._along_chain(dev, center)
             color = np.array(ev["color"], dtype=float) * (self.eng.config["lights"]["flash_brightness"] / 100)
             env = ev["env"]
             loud = env[min(len(env) - 1, int(ev["voice"]["pos"] / (RATE / LIGHT_HZ)))]
             level = (0.45 + 0.55 * loud) * random.uniform(0.85, 1.0)   # follows the sound, with a flame-like flicker
             ripple = self.eng.config["lights"]["ripple"] * (0.3 + 0.7 * loud)
         else:
-            ev_center = None
-        if ev_center is not None:
-            seg_pos = (1 - ev_center if dev["reverse"] else ev_center) * (n - 1)
+            along = None
+        if along is not None:
+            seg_pos = (1 - along if dev["reverse"] else along) * (n - 1)
             d = np.abs(np.arange(n) - seg_pos)
             w = np.exp(-(d / 0.6) ** 2) * level             # the light(s) right next to the sound
-            if ev and not self.tests.get(ip, 0) > now:       # every other light ripples a little
+            if ev and not testing:                           # every other light ripples a little
                 w = np.maximum(w, ripple * np.random.uniform(0.75, 1.0, n))
             w = w[:, None]
             target = target * (1 - w) + color * w

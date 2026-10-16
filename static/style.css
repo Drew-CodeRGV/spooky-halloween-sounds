@@ -136,6 +136,18 @@ legend { padding: 0 6px; color: var(--muted); font-weight: 600; font-size: .85re
 .house .door { position: absolute; bottom: 0; left: 50%; transform: translateX(-50%); width: 20px; height: 34px; background: var(--pumpkin); opacity: .5; border-radius: 3px 3px 0 0; }
 .sidewalk { position: absolute; left: 0; right: 0; bottom: 0; height: 40px; background: #2b2730;
   border-top: 2px solid #3a3540; color: #7d7488; font-size: .75rem; display: grid; place-items: center; letter-spacing: 1px; }
+/* A light chain strung across its slice of the yard, bulbs numbered west to east */
+.chain-line {
+  position: absolute; height: 16px; z-index: 3; display: flex; align-items: center;
+  justify-content: space-between; padding: 0 2px; pointer-events: none;
+  border-top: 2px dotted rgba(255, 122, 26, .45);
+}
+.chain-line.off { opacity: .3; filter: grayscale(1); }
+.chain-line .bulb-dot {
+  width: 15px; height: 15px; border-radius: 50%; display: grid; place-items: center;
+  font-size: .6rem; font-weight: 700; color: var(--black);
+  background: var(--pumpkin); box-shadow: 0 0 7px rgba(255, 122, 26, .6);
+}
 .spot {
   position: absolute; transform: translate(-50%, -50%); width: 92px; text-align: center; cursor: grab;
   touch-action: none; user-select: none; -webkit-user-select: none;
@@ -258,6 +270,8 @@ pre.cmd { background: var(--black-2); border: 1px solid var(--line); border-radi
 .light-row .chain-opts { grid-column: 1 / -1; display: grid; gap: 4px; font-size: .88rem; }
 .light-row .chain-detail { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; padding-left: 26px; }
 .light-row .chain-detail input[type=number] { width: 4.5em; }
+.light-row .chain-presets { display: flex; gap: 6px; }
+.light-row .chain-nums { font-weight: 700; color: var(--pumpkin); }
 .light-row select:disabled { opacity: .4; }
 input[type=color] { width: 54px; height: 32px; padding: 2px; border-radius: 8px; border: 1px solid var(--line); background: var(--black-2); }
 @media (max-width: 600px) {
