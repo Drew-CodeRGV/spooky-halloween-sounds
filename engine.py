@@ -75,6 +75,8 @@ DEFAULT_CONFIG = {
                  "placements": [f"p{i + 1}" for i in range(7)], "active_hours_only": True},
     "lights": {"enabled": False, "devices": [], "idle_color": "#ff5a00", "idle_brightness": 50,
                "flash_brightness": 100, "flicker": True,
+               "flicker_rate": 6.0,      # how many times a second each bulb picks a new level
+               "flicker_depth": 0.4,     # how far it dips, 0 = steady, 1 = guttering
                "ripple": 0.25,    # how much lights away from the sound still react (0..1)
                # On a schedule: on `minutes_before` sunset, off at `off_time` (needs the yard's location)
                "schedule": True, "minutes_before": 30, "off_time": "04:00",
@@ -140,6 +142,8 @@ def sanitize(cfg):
     li = cfg["lights"]
     li["enabled"] = bool(li["enabled"])
     li["flicker"] = bool(li["flicker"])
+    li["flicker_rate"] = _num(li.get("flicker_rate"), 0.2, LIGHT_HZ, d["lights"]["flicker_rate"])
+    li["flicker_depth"] = _num(li.get("flicker_depth"), 0, 1, d["lights"]["flicker_depth"])
     li["idle_brightness"] = _num(li["idle_brightness"], 0, 100, 15)
     li["flash_brightness"] = _num(li["flash_brightness"], 1, 100, 100)
     li["ripple"] = _num(li.get("ripple"), 0, 1, 0.25)
@@ -586,6 +590,7 @@ class Lights:
         self.tests = {}       # ip -> time a test flash ends
         self.last = {}        # ip -> {"rgb", "bri", "on", "t"}
         self.chains = {}      # ip -> {"cur": current segment colors, "sent", "t", "mode_t"}
+        self.flick = {}       # ip -> (when it was picked, a level per bulb)
         self.dark_t = None    # when we last told the lights to switch off (outside their schedule)
         self._sched = (0, None)
         threading.Thread(target=self._loop, daemon=True).start()
@@ -600,6 +605,7 @@ class Lights:
     def forget(self):
         self.last.clear()  # resend everything on the next tick (after settings change)
         self.chains.clear()
+        self.flick.clear()
 
     def _loop(self):
         while True:
@@ -670,7 +676,7 @@ class Lights:
             self.event = ev = None
         idle_rgb = govee.hex_to_rgb(cfg["idle_color"])
         idle_b = cfg["idle_brightness"]
-        flicker = cfg["flicker"] and self.eng.ambience.status()["playing"]
+        flicker = cfg["flicker"]
         now = time.time()
         positions = self._chain_positions()
         for dev in cfg["devices"]:
@@ -699,35 +705,43 @@ class Lights:
                 rgb = tuple(int(a * (1 - r) + b * r) for a, b in zip(idle_rgb, ev["color"]))
                 self._set(ip, rgb, max(idle_b, 5) + (cfg["flash_brightness"] - max(idle_b, 5)) * r)
             else:
-                b = idle_b * (random.uniform(0.55, 1.15) if flicker and idle_b else 1)
+                b = idle_b * (self._flicker(ip, 1, now)[0] if flicker and idle_b else 1)
                 self._set(ip, idle_rgb, b)
 
-    def _lit_range(self):
-        """The stretch of yard the chains actually cover, as (west, east) in 0..1."""
-        spans = [(d["span_start"] / 100, d["span_end"] / 100)
-                 for d in self.eng.config["lights"]["devices"] if d["chain"] and d["on"]]
-        if not spans:
-            return 0.0, 1.0
-        return min(w for w, _ in spans), max(e for _, e in spans)
+    def _flicker(self, key, n, now):
+        """A level per bulb that drifts like a flame, as a multiplier around 1.
+
+        Each bulb holds its level for 1/rate of a second and then picks another, so the
+        rate slider is how busy the flicker looks and the depth slider is how far it
+        dips. The chains ease toward whatever they are given, which turns a low rate into
+        a slow breathing rather than a series of steps.
+        """
+        cfg = self.eng.config["lights"]
+        depth = cfg["flicker_depth"]
+        if depth <= 0:
+            return np.ones(n)
+        due, levels = self.flick.get(key, (0.0, None))
+        if levels is None or len(levels) != n or now >= due:
+            # step the deadline on by one interval rather than measuring from now: a tick
+            # lands a little past it every time, and starting over from now would pile
+            # those overshoots up and leave the flicker slower than the slider says
+            levels = np.random.uniform(1 - depth, 1 + depth * 0.25, n)
+            nxt = due + 1 / cfg["flicker_rate"]
+            if nxt <= now:            # first pick, or the engine fell behind: restart
+                nxt = now + 1 / cfg["flicker_rate"]
+            self.flick[key] = (nxt, levels)
+        return levels
 
     def _chain_positions(self):
-        """Where each turned-on speaker sits along the lights, 0 = the first bulb of the
-        westmost chain, 1 = the last bulb of the eastmost.
+        """Where each turned-on speaker sits across the yard map: 0 = west fence, 1 = east.
 
-        The speakers are stretched to fill the lights rather than pinned to their literal
-        spots on the map. The yard map says where the sound comes from; the lights are a
-        show, and a show that only ever uses the middle of the run looks broken. So the
-        westmost speaker lights the first bulb, the eastmost lights the last, and a sweep
-        travels the whole run end to end.
+        Straight off the map, in the same measure as a chain's span, so a sound lights the
+        bulb that is really beside it. An earlier version stretched the speakers to fill
+        the lights, to stop a run whose ends were past the outermost speakers from wasting
+        them; measuring the yard made that unnecessary and it only threw the bulbs off, so
+        if the ends of a run go unused, shorten that chain's span instead.
         """
-        spots = [p for p in self.eng.config["placements"] if p["enabled"]]
-        if not spots:
-            return {}
-        lo, hi = min(p["x"] for p in spots), max(p["x"] for p in spots)
-        west, east = self._lit_range()
-        if hi <= lo:                       # a single speaker: put it in the middle
-            return {p["id"]: (west + east) / 2 for p in spots}
-        return {p["id"]: west + (east - west) * (p["x"] - lo) / (hi - lo) for p in spots}
+        return {p["id"]: p["x"] / 100 for p in self.eng.config["placements"] if p["enabled"]}
 
     def _along_chain(self, dev, center):
         """Where a sound falls along one chain: 0 = its first bulb, 1 = its last.
@@ -771,7 +785,7 @@ class Lights:
         idle = np.array(idle_rgb, dtype=float) * (idle_b / 100)
         target = np.tile(idle, (n, 1))
         if flicker and idle_b:
-            target *= np.random.uniform(0.6, 1.1, (n, 1))
+            target *= self._flicker(ip, n, now)[:, None]
         testing = self.tests.get(ip, 0) > now
         if testing:                          # test flash: a spot running end to end of this chain
             along, color, level = (now * 0.8) % 1.0, np.array((255, 90, 0), float), 1.0

@@ -461,6 +461,9 @@ function renderLights() {
   setSlider("lightsFlash", li.flash_brightness);
   $("lightsFlashOut").textContent = li.flash_brightness + "%";
   $("lightsFlicker").checked = li.flicker;
+  setSlider("lightsFlickRate", li.flicker_rate);
+  $("lightsFlickRateOut").textContent = li.flicker_rate + "/s";
+  setSlider("lightsFlickDepth", li.flicker_depth, true);
   setSlider("lightsRipple", li.ripple, true);
   $("lightsSched").checked = li.schedule;
   $("lightsBefore").value = li.minutes_before;
@@ -819,6 +822,8 @@ function wire() {
   $("lightsIdle").oninput = () => { $("lightsIdleOut").textContent = $("lightsIdle").value + "%"; save({ lights: { idle_brightness: +$("lightsIdle").value } }); };
   $("lightsFlash").oninput = () => { $("lightsFlashOut").textContent = $("lightsFlash").value + "%"; save({ lights: { flash_brightness: +$("lightsFlash").value } }); };
   $("lightsFlicker").onchange = () => save({ lights: { flicker: $("lightsFlicker").checked } });
+  $("lightsFlickRate").oninput = () => { $("lightsFlickRateOut").textContent = $("lightsFlickRate").value + "/s"; save({ lights: { flicker_rate: +$("lightsFlickRate").value } }); };
+  $("lightsFlickDepth").oninput = () => { setSlider("lightsFlickDepth", +$("lightsFlickDepth").value, true); save({ lights: { flicker_depth: +$("lightsFlickDepth").value } }); };
   $("lightsSched").onchange = () => save({ lights: { schedule: $("lightsSched").checked } });
   $("lightsBefore").onchange = () => save({ lights: { minutes_before: +$("lightsBefore").value } });
   $("lightsOff").onchange = () => save({ lights: { off_time: $("lightsOff").value } });

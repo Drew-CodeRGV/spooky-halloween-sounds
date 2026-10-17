@@ -6,6 +6,7 @@ A Raspberry Pi 4 that hides creepy sounds around your yard. When someone walks b
 - **Motion sensor**, **automatic timer**, or both
 - Another speaker can "answer" a sound, and a sound can "creep" from speaker to speaker
 - Choose which sounds play from which speaker, upload your own sounds, and set active hours
+- **Flicker** between scares, with speed and depth sliders, from a slow breathing to a guttering candle
 - **Background atmospheres** that loop quietly underneath the scares (graveyard, sewer, abandoned asylum, thunderstorm, haunted forest, mad scientist lab, witch's cauldron)
 - **Halloween radio** from the free radio-browser.info directory, which can replace the spooky sounds while it plays
 - **Denon controls** on the dashboard: power, input, sound mode, volume (with a safety limit), and automatic on/off with your active hours
@@ -77,7 +78,7 @@ Two strings, old in the west and new in the east:
 | Old (west) | on | 4 | 0% to 50% | 1-4 |
 | New (east) | on | 4 | 50% to 100% | 5-8 |
 
-The bulbs are numbered as one run from west to east, so the two strings read as bulbs 1 through 8. Sounds are **stretched to fill that run**: the westmost speaker lights the first bulb, the eastmost lights the last, and a sweep travels the whole way end to end. The yard map says where a sound comes from; the lights are a show, and one that only ever used the middle of the run would look broken. **First bulb is on the east end** flips a string whose plug is at the far end. The yard map draws each chain as a dotted line over the part of the yard it covers, with its bulb numbers, so you can check it matches what's really outside.
+The bulbs are numbered as one run from west to east, so the two strings read as bulbs 1 through 8. A sound lights the bulb that is really beside it, measured off the yard map, so set each span to where that string's bulbs actually are. Walk them with one bulb lit at a time if you're not sure: if the first or last bulb of the run never flares, the chains reach past your outermost speakers, and shortening that span brings them into play. **First bulb is on the east end** flips a string whose plug is at the far end. The yard map draws each chain as a dotted line over the part of the yard it covers, with its bulb numbers, so you can check it matches what's really outside.
 
 ## Sounds
 The repo comes with original sounds, all made from scratch by `make_spooky_sounds.py`, so they're free to use and share:

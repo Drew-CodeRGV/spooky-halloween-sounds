@@ -151,7 +151,10 @@
         <legend>Between scares</legend>
         <label class="field">Idle color <input type="color" id="lightsIdleColor"></label>
         <label class="slider-row"><span>Idle brightness</span><input type="range" id="lightsIdle" min="0" max="100" step="1"><output id="lightsIdleOut"></output></label>
-        <label class="toggle"><input type="checkbox" id="lightsFlicker"><span>Flicker while an atmosphere plays</span></label>
+        <label class="toggle"><input type="checkbox" id="lightsFlicker"><span>Flicker between scares</span></label>
+        <label class="slider-row"><span>Flicker speed</span><input type="range" id="lightsFlickRate" min="0.2" max="15" step="0.2"><output id="lightsFlickRateOut"></output></label>
+        <label class="slider-row"><span>Flicker depth</span><input type="range" id="lightsFlickDepth" min="0" max="1" step="0.05"><output id="lightsFlickDepthOut"></output></label>
+        <div class="muted small">Speed is how often each bulb picks a new level; depth is how far it dips. Low and deep reads as a slow breathing, fast and deep as a guttering candle. Depth 0 turns it off.</div>
       </fieldset>
       <fieldset class="lights-schedule">
         <legend>Schedule</legend>
