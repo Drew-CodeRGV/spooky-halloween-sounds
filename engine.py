@@ -702,9 +702,32 @@ class Lights:
                 b = idle_b * (random.uniform(0.55, 1.15) if flicker and idle_b else 1)
                 self._set(ip, idle_rgb, b)
 
+    def _lit_range(self):
+        """The stretch of yard the chains actually cover, as (west, east) in 0..1."""
+        spans = [(d["span_start"] / 100, d["span_end"] / 100)
+                 for d in self.eng.config["lights"]["devices"] if d["chain"] and d["on"]]
+        if not spans:
+            return 0.0, 1.0
+        return min(w for w, _ in spans), max(e for _, e in spans)
+
     def _chain_positions(self):
-        """Where each turned-on speaker sits across the yard map: 0 = west fence, 1 = east fence."""
-        return {p["id"]: p["x"] / 100 for p in self.eng.config["placements"] if p["enabled"]}
+        """Where each turned-on speaker sits along the lights, 0 = the first bulb of the
+        westmost chain, 1 = the last bulb of the eastmost.
+
+        The speakers are stretched to fill the lights rather than pinned to their literal
+        spots on the map. The yard map says where the sound comes from; the lights are a
+        show, and a show that only ever uses the middle of the run looks broken. So the
+        westmost speaker lights the first bulb, the eastmost lights the last, and a sweep
+        travels the whole run end to end.
+        """
+        spots = [p for p in self.eng.config["placements"] if p["enabled"]]
+        if not spots:
+            return {}
+        lo, hi = min(p["x"] for p in spots), max(p["x"] for p in spots)
+        west, east = self._lit_range()
+        if hi <= lo:                       # a single speaker: put it in the middle
+            return {p["id"]: (west + east) / 2 for p in spots}
+        return {p["id"]: west + (east - west) * (p["x"] - lo) / (hi - lo) for p in spots}
 
     def _along_chain(self, dev, center):
         """Where a sound falls along one chain: 0 = its first bulb, 1 = its last.

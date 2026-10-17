@@ -77,7 +77,7 @@ Two strings, old in the west and new in the east:
 | Old (west) | on | 4 | 0% to 50% | 1-4 |
 | New (east) | on | 4 | 50% to 100% | 5-8 |
 
-The bulbs are numbered as one run from west to east, so the two strings read as bulbs 1 through 8. **First bulb is on the east end** flips a string whose plug is at the far end. The yard map draws each chain as a dotted line over the part of the yard it covers, with its bulb numbers, so you can check it matches what's really outside.
+The bulbs are numbered as one run from west to east, so the two strings read as bulbs 1 through 8. Sounds are **stretched to fill that run**: the westmost speaker lights the first bulb, the eastmost lights the last, and a sweep travels the whole way end to end. The yard map says where a sound comes from; the lights are a show, and one that only ever used the middle of the run would look broken. **First bulb is on the east end** flips a string whose plug is at the far end. The yard map draws each chain as a dotted line over the part of the yard it covers, with its bulb numbers, so you can check it matches what's really outside.
 
 ## Sounds
 The repo comes with original sounds, all made from scratch by `make_spooky_sounds.py`, so they're free to use and share:
