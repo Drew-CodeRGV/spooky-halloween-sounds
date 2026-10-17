@@ -566,6 +566,11 @@ def envelope(mono, hz=LIGHT_HZ):
     return np.clip(e / (e.max() or 1), 0, 1)
 
 
+# How long to leave a chain in segment mode before re-arming it (seconds). Doubled when
+# nothing is playing, since the re-arm blinks the string and there's no flare to hide it.
+MODE_REARM = 300
+
+
 class Lights:
     """Keeps Govee lights in step with the sounds.
 
@@ -731,7 +736,12 @@ class Lights:
             self.govee.power(ip, True)
             self.govee.brightness(ip, 100)   # brightness is in the colors themselves
             st = self.chains[ip] = {"cur": None, "sent": None, "t": 0, "mode_t": 0}
-        if now - st["mode_t"] > 20:          # keep segment mode switched on
+        # Segment mode lapses when a light stops getting frames, and a light that lost
+        # power comes back without it, so it has to be re-armed now and then. The packet
+        # makes the string blink, though, so don't do it on a plain timer: re-arm when the
+        # stream really has lapsed, and otherwise only rarely - by choice while a sound is
+        # playing, which hides the flash inside the flare.
+        if now - st["t"] > 30 or now - st["mode_t"] > (MODE_REARM if ev else MODE_REARM * 2):
             self.govee.segments_mode(ip, True)
             st["mode_t"] = now
 
