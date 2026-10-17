@@ -71,14 +71,41 @@ A string of bulbs is one light to Govee but many points in the yard, so turn on 
 
 Because a string usually covers only part of the yard, each one has a **span**: *covers the yard from X% to Y%*, where 0% is the west edge of the yard map and 100% is the east edge. A sound outside a string's span leaves it at its idle ripple, and the bulb at the near end glows as the sound comes closer.
 
-Two strings, old in the west and new in the east:
+Two strings, one west and one east, with the spans this yard actually measured at:
 
-| String | Chain | Segments | Covers | Bulbs |
-|---|---|---|---|---|
-| Old (west) | on | 4 | 0% to 50% | 1-4 |
-| New (east) | on | 4 | 50% to 100% | 5-8 |
+| String | Chain | Segments | Covers | Bulbs | First bulb east |
+|---|---|---|---|---|---|
+| West | on | 4 | 10% to 50% | 1-4 | off |
+| East | on | 4 | 50% to 78% | 5-8 | off |
 
-The bulbs are numbered as one run from west to east, so the two strings read as bulbs 1 through 8. A sound lights the bulb that is really beside it, measured off the yard map, so set each span to where that string's bulbs actually are. Walk them with one bulb lit at a time if you're not sure: if the first or last bulb of the run never flares, the chains reach past your outermost speakers, and shortening that span brings them into play. **First bulb is on the east end** flips a string whose plug is at the far end. The yard map draws each chain as a dotted line over the part of the yard it covers, with its bulb numbers, so you can check it matches what's really outside.
+The east string stops at 78% rather than the fence because that's where the bulbs stop - it turns back along the house. Spans describe the bulbs, not the yard.
+
+The bulbs are numbered as one run from west to east, so the two strings read as bulbs 1 through 8. A sound lights the bulb that is really beside it, measured off the yard map, so each span wants to be where that string's bulbs actually are.
+
+**Don't guess the spans, walk them.** `python3 walk_bulbs.py` lights one bulb at a time, solid white, and steps on when you press Enter. Stand outside with it and note where each bulb falls relative to your speakers. It pauses light sync while it runs and switches it back on at the end. Over ssh, `python3 walk_bulbs.py --file &` takes the bulb number from `/tmp/spooky_walk` instead, so you can walk the yard and change it from your phone.
+
+Walking it is also the only reliable way to settle **first bulb is on the east end**. Two strings of the same model can be wired opposite ways round, and a mirrored string is hard to spot from the porch but makes every scare on that half light the wrong place. Light bulb 1, then the next: if the second one appears further *west*, that string is reversed.
+
+If the first or last bulb of the run never flares, the chains reach further out than your outermost speakers. That's expected, not a fault - a sound at the westmost speaker lights the bulb beside *it*, not the one at the fence. Shorten that chain's span if you'd rather the end bulbs joined in.
+
+## Notes on the hardware
+Things that cost an evening to work out, kept here so they don't have to be worked out twice.
+
+### Govee (tested on H8066 permanent outdoor lights)
+- **Re-arming segment mode makes the string blink.** Sending the mode packet to a light already in that mode still flashes it. The engine therefore re-arms only when the frame stream has actually lapsed, and otherwise rarely, by preference while a sound is playing so the flash hides inside the flare.
+- **Segment mode lapses after about a minute without a frame**, and the string drops back to whatever scene the Govee app had on - you'll see it start cycling colours. A light that lost power comes back out of the mode too, which is why the re-arm can't go away entirely.
+- **Multi-colour frames need to be streamed.** A single frame gets ignored or overwritten. If you're testing by hand, loop it.
+- **`devStatus` lies about what the string is showing.** It reports the last whole-string colour command and is never updated by segment frames.
+- Segment order follows the wiring, not the compass. Two identical strings here are wired opposite ways round.
+
+### Denon AVR-1912
+- **One connection at a time, and it refuses a new one for a moment after the last closes.** Ten connections opened back to back got one through. Anything that connects per command falls apart exactly when it's used most - a button press and the status read after it knock each other out. The engine holds a single session open for its whole life instead.
+- **It announces its own changes on that session**, unsolicited: set `MV72` and `MV72` comes back. So the dashboard doesn't poll for status. It stays quiet when a command changes nothing, which makes "set it to what it already is" a useless test.
+- Answers arrive with company: `MV?` brings `MV73` *and* `MVMAX 98`, `PW?` can bring `Z2ON`. Parse per line and ignore the rest.
+- Commands sent down one session want about 0.15 s between them, and 1.5 s after `PWON`.
+
+## Tests
+`python3 tests/run.py`, or `python3 tests/run.py track` for a subset. No framework - each file asserts and prints what it checked. They cover the light-chain geometry, sweeps handing off between chains, the segment-mode re-arm, flicker speed and depth, and the Denon session against a stand-in receiver that refuses concurrent connections the way the real one does.
 
 ## Sounds
 The repo comes with original sounds, all made from scratch by `make_spooky_sounds.py`, so they're free to use and share:
@@ -113,12 +140,14 @@ Pandora doesn't let other devices play its stations without a paid account and l
 ## Files
 - `install.sh`: sets up a fresh Pi
 - `app.py`: the web dashboard and its API
-- `denon.py`: Denon network control (port 23 commands)
+- `denon.py`: Denon network control (one held session on port 23)
 - `engine.py`: the audio engine (always-on 7.1 mixer to HDMI), scare scheduler, motion sensor and radio
 - `static/`: dashboard (`index.html`), phone remote (`remote.html`), app manifest, service worker, icons
 - `make_icons.py`: draws the app icons
 - `make_spooky_sounds.py`: synthesizes the scare sounds and background loops
 - `make_placeholder_sounds.py`: makes the starter growls, heartbeat, breathing and moan
+- `walk_bulbs.py`: lights the chains one bulb at a time, for working out each chain's span
+- `tests/`: `python3 tests/run.py` - light geometry, sweeps, segment-mode re-arm, flicker, Denon session
 - `config.json`: your settings (created on the Pi, not in git)
 
 To try the dashboard on a laptop: `pip install flask numpy` and then `SPOOKY_PORT=8080 python3 app.py`. On a laptop it runs without making sound.
