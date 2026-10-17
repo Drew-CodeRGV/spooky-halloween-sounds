@@ -96,8 +96,11 @@ function renderYard() {
     line.style.width = (d.span_end - d.span_start) + "%";
     line.style.top = 6 + row * 20 + "px";
     line.title = `${d.name}: bulbs ${c.first}-${c.last} across ${Math.round(d.span_start)}-${Math.round(d.span_end)}% of the yard`;
-    const nums = Array.from({ length: d.segments }, (_, k) => (d.reverse ? c.last - k : c.first + k));
-    line.innerHTML = nums.map((num) => `<span class="bulb-dot">${num}</span>`).join("");
+    // Bulb numbers are places in the yard, counted west to east, so they always run up
+    // from left to right. "First bulb is on the east end" is wiring, not numbering: it
+    // only tells the engine which end of the string to drive.
+    line.innerHTML = Array.from({ length: d.segments },
+      (_, k) => `<span class="bulb-dot">${c.first + k}</span>`).join("");
     yard.appendChild(line);
   });
   cfg.placements.forEach((p, i) => {
