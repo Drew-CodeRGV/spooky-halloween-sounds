@@ -2,7 +2,10 @@
 
 The Denon listens on TCP port 23 for plain-text commands ending in a carriage
 return: PWON, PWSTANDBY, MV45, MUON, SIDVD, MSDIRECT, and queries like PW?.
-It only accepts one connection at a time, so every call opens, talks, and closes.
+
+It accepts one connection at a time and refuses a new one for a moment after the
+last closes, so we open a single session and keep it. It also announces every
+change on that session without being asked, which keeps the dashboard live.
 """
 import concurrent.futures
 import re
@@ -105,57 +108,132 @@ def diagnose(host, err):
     return f"Can't reach the Denon at {ip} ({err})"
 
 
+QUERIES = ["PW?", "MV?", "MU?", "SI?", "MS?"]
+GAP = 0.15          # the receiver drops commands sent back to back
+RECONNECT_MAX = 30.0
+
+
 class Denon:
+    """One telnet session, held open for as long as the program runs.
+
+    Opening a connection per command looked fine in testing and fell apart in the
+    yard: the receiver refuses a new connection for a moment after the last one
+    closes, so a command and the status read that followed it would knock each
+    other out, and dragging the volume slider lost most of its messages.
+    """
+
     def __init__(self):
-        self.lock = threading.Lock()
+        self.lock = threading.Lock()     # one writer at a time on the socket
         self.status = {"connected": False, "error": "Not set up yet"}
         self.checked = 0
+        self.sock = None
+        self.host = None
+        self.want = None                 # the address we should be talking to
+        threading.Thread(target=self._run, daemon=True).start()
 
-    def send(self, host, commands, settle=0.6):
-        """Send commands and return every line the receiver says back."""
-        if not host:
-            raise RuntimeError("No Denon address set. Press Find Denon.")
+    # -- the session ---------------------------------------------------------
+    def _drop(self):
         with self.lock:
-            with socket.create_connection(_addr(host), timeout=3) as s:
-                for cmd in commands:
-                    s.sendall(cmd.encode("ascii") + b"\r")
-                    time.sleep(1.5 if cmd == "PWON" else 0.15)  # it needs a moment after power-on
-                s.settimeout(settle)
-                data = b""
+            if self.sock:
                 try:
-                    while True:
-                        chunk = s.recv(4096)
-                        if not chunk:
-                            break
-                        data += chunk
-                except socket.timeout:
+                    self.sock.close()
+                except OSError:
                     pass
-        return [l.strip() for l in data.decode("ascii", "replace").split("\r") if l.strip()]
+            self.sock = None
 
-    def refresh(self, host):
-        try:
-            lines = self.send(host, ["PW?", "MV?", "MU?", "SI?", "MS?"])
-        except Exception as e:
-            self.status = {"connected": False, "error": diagnose(host, e)}
-            return self.status
-        st = {"connected": True, "error": None, "host": host}
-        for l in lines:
-            if l in ("PWON", "PWSTANDBY"):
-                st["power"] = "on" if l == "PWON" else "standby"
-            elif m := re.fullmatch(r"MV(\d{2,3})", l):
-                st["volume_db"] = mv_to_db(m.group(1))
-            elif l in ("MUON", "MUOFF"):
-                st["muted"] = l == "MUON"
-            elif l.startswith("SI"):
-                st["input"] = l[2:]
-            elif l.startswith("MS"):
-                st["mode"] = l[2:]
+    def _run(self):
+        """Keep the session up, and turn everything the receiver says into status."""
+        buf, wait = "", 1.0
+        while True:
+            host = self.want
+            if not host:
+                time.sleep(0.5)
+                continue
+            if self.sock is None or self.host != host:
+                self._drop()
+                try:
+                    sock = socket.create_connection(_addr(host), timeout=4)
+                except Exception as e:
+                    self.status = {"connected": False, "error": diagnose(host, e)}
+                    time.sleep(wait)
+                    wait = min(RECONNECT_MAX, wait * 2)
+                    continue
+                sock.settimeout(1.0)
+                with self.lock:
+                    self.sock, self.host = sock, host
+                buf, wait = "", 1.0
+                self.status = {"connected": True, "error": None, "host": host}
+                self.ask(QUERIES)        # fill in where the receiver currently stands
+            try:
+                chunk = self.sock.recv(4096)
+                if not chunk:
+                    raise ConnectionResetError("the Denon closed the connection")
+            except socket.timeout:
+                continue
+            except OSError as e:
+                self.status = {"connected": False, "error": diagnose(host, e)}
+                self._drop()
+                time.sleep(1.0)
+                continue
+            buf += chunk.decode("ascii", "replace")
+            *lines, buf = buf.split("\r")
+            for line in lines:
+                self._absorb(line.strip())
+
+    def _absorb(self, line):
+        """One line from the receiver, solicited or not."""
+        st = dict(self.status)
+        if line in ("PWON", "PWSTANDBY"):
+            st["power"] = "on" if line == "PWON" else "standby"
+        elif m := re.fullmatch(r"MV(\d{2,3})", line):
+            st["volume_db"] = mv_to_db(m.group(1))
+        elif line in ("MUON", "MUOFF"):
+            st["muted"] = line == "MUON"
+        elif line.startswith("SI"):
+            st["input"] = line[2:]
+        elif line.startswith("MS"):
+            st["mode"] = line[2:]
+        else:
+            return                       # MVMAX, Z2ON, SVSOURCE and friends
+        st["connected"], st["error"], st["host"] = True, None, self.host
         self.status = st
         self.checked = time.time()
-        return st
+
+    # -- talking to it -------------------------------------------------------
+    def ask(self, commands):
+        """Write commands on the open session. Answers arrive in the reader."""
+        with self.lock:
+            sock = self.sock
+            if sock is None:
+                raise ConnectionError(self.status.get("error") or "not connected to the Denon")
+            for cmd in commands:
+                sock.sendall(cmd.encode("ascii") + b"\r")
+                time.sleep(1.5 if cmd == "PWON" else GAP)   # it needs a moment after power-on
+
+    def send(self, host, commands, settle=0.3):
+        """Send commands, waiting briefly for the receiver to report back."""
+        if not host:
+            raise RuntimeError("No Denon address set. Press Find Denon.")
+        self.want = host
+        deadline = time.time() + 6
+        while self.sock is None and time.time() < deadline:
+            time.sleep(0.05)             # a reconnect may be in flight
+        self.ask(commands)
+        time.sleep(settle)               # give the reader a moment to pick up the answer
+        return []
+
+    def refresh(self, host):
+        """Ask where the receiver stands. Mostly a keepalive now: it reports changes itself."""
+        self.want = host
+        try:
+            self.send(host, QUERIES)
+        except Exception as e:
+            if self.status.get("connected"):
+                self.status = {"connected": False, "error": diagnose(host, e)}
+        return self.status
 
     def get_ready(self, host, input_name, mode, volume_db, max_db):
         """Power on and set the input, sound mode, and volume for the haunt."""
-        cmds = ["PWON", "ZMON", f"SI{input_name}", f"MS{mode}", db_to_mv(min(volume_db, max_db)), "MUOFF"]
-        self.send(host, cmds)
-        return self.refresh(host)
+        self.send(host, ["PWON", "ZMON", f"SI{input_name}", f"MS{mode}",
+                         db_to_mv(min(volume_db, max_db)), "MUOFF"])
+        return self.status

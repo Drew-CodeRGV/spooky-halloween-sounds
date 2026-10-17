@@ -1311,7 +1311,9 @@ class Engine:
         except Exception as e:
             return f"Denon didn't respond: {e}"
         finally:
-            if self.config["denon"]["host"]:
+            # No read-back needed: the receiver announces its own changes on the open
+            # session. Find is the exception - it points us at a different address.
+            if action == "find" and self.config["denon"]["host"]:
                 self.denon.refresh(self.config["denon"]["host"])
         return None
 
