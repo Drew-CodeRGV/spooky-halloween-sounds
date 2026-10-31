@@ -154,7 +154,7 @@ function makeDraggable(el, id) {
 
 // Show the left-to-right order sweeps will travel
 function renderSweepOrder() {
-  const on = cfg.placements.filter((p) => p.enabled).sort((a, b) => a.x - b.x || a.y - b.y);
+  const on = cfg.placements.filter((p) => p.enabled && !p.ambush).sort((a, b) => a.x - b.x || a.y - b.y);
   $("sweepOrder").textContent = on.length > 1 ? "Sweep order: " + on.map((p) => p.name).join(" → ") : "";
 }
 
@@ -172,6 +172,7 @@ function renderPlacements() {
         <input type="text" value="${esc(p.name)}" maxlength="30" aria-label="Name">
       </div>
       <label class="toggle"><input type="checkbox" ${p.enabled ? "checked" : ""}><span>Speaker is here</span></label>
+      <label class="toggle" title="Stays silent until a sound at the house has everyone looking the other way"><input type="checkbox" data-act="ambush" ${p.ambush ? "checked" : ""}><span>Jump scares only</span></label>
       <div class="meta">
         <span>Denon: ${esc(p.terminal)}</span>
         <label>HDMI ch <select>${channels.map((c) => `<option ${c === p.channel ? "selected" : ""}>${c}</option>`).join("")}</select></label>
@@ -191,6 +192,8 @@ function renderPlacements() {
     nameIn.onkeydown = (e) => { if (e.key === "Enter") nameIn.blur(); };
     enabledIn.onchange = () => { P().enabled = enabledIn.checked; card.classList.toggle("off", !enabledIn.checked); savePlacements(); renderYard(); renderMatrix(true); renderSweepOrder(); };
     chSel.onchange = () => { P().channel = +chSel.value; savePlacements(); };
+    const ambushIn = card.querySelector("[data-act=ambush]");
+    ambushIn.onchange = () => { P().ambush = ambushIn.checked; savePlacements(); renderSweepOrder(); };
     vol.oninput = () => { P().volume = +vol.value; card.querySelector("output").textContent = Math.round(vol.value * 100) + "%"; savePlacements(); };
     card.querySelector("[data-act=beep]").onclick = () => { const ch = P().channel; api("/api/beep", { channel: ch }); toast(`Beeping HDMI channel ${ch}: listen for 3 beeps`); };
     card.querySelector("[data-act=play]").onclick = () => playAt(id);
@@ -304,6 +307,7 @@ function renderTiming() {
   $("coolMax").value = cfg.cooldown_max;
   setSlider("answer", cfg.answer_chance, true);
   setSlider("creep", cfg.creep_chance, true);
+  setSlider("ambush", cfg.ambush_chance, true);
   $("hoursOn").checked = cfg.active_hours_enabled;
   $("hoursStart").value = cfg.active_start;
   $("hoursEnd").value = cfg.active_end;
@@ -593,6 +597,7 @@ function renderAtmos(force) {
     toast(playingThis ? "Atmosphere fading out" : `Atmosphere: ${b.textContent.replace("🗑", "").trim()}`);
     updateAtmos();
   }));
+  renderAtmosSched();
   updateAtmos();
   markPreview();
 }
@@ -620,10 +625,49 @@ function renderAtmosSettings() {
     };
     wrap.appendChild(c);
   });
+  renderAtmosSched();
+}
+
+const EVERY = [[15, "15 minutes"], [30, "30 minutes"], [60, "hour"], [120, "2 hours"], [180, "3 hours"]];
+
+function renderAtmosSched() {
+  const wrap = $("atmosSched");
+  const list = cfg.ambience.schedule;
+  const saveList = () => save({ ambience: { schedule: list } });
+  wrap.innerHTML = "";
+  list.forEach((e, i) => {
+    const row = document.createElement("div");
+    row.className = "sched-row";
+    row.innerHTML = `
+      <label class="toggle"><input type="checkbox" ${e.on ? "checked" : ""} aria-label="On"><span></span></label>
+      <select data-k="track" aria-label="Track"></select>
+      <span>every</span>
+      <select data-k="every" aria-label="How often"></select>
+      <label class="slider-row"><span>Volume</span><input type="range" min="0" max="1" step="0.01" value="${e.volume}"><output>${Math.round(e.volume * 100)}%</output></label>
+      <button class="btn small" data-act="play" title="Play it in the yard now">▶ Now</button>
+      <button class="btn small" data-act="del" title="Remove">🗑</button>`;
+    const [onIn, volIn] = row.querySelectorAll("input");
+    const [trackSel, everySel] = row.querySelectorAll("select");
+    options(trackSel, state.ambience.map((a) => [a.name, a.label]), e.track);
+    options(everySel, EVERY.map(([m, label]) => [String(m), label]), String(e.every));
+    onIn.onchange = () => { e.on = onIn.checked; saveList(); };
+    trackSel.onchange = () => { e.track = trackSel.value; saveList(); };
+    everySel.onchange = () => { e.every = +everySel.value; saveList(); };
+    volIn.oninput = () => { e.volume = +volIn.value; row.querySelector("output").textContent = Math.round(e.volume * 100) + "%"; saveList(); };
+    row.querySelector("[data-act=play]").onclick = async () => {
+      const r = await api("/api/ambience/timed", { track: e.track, volume: e.volume });
+      toast(r.ok ? `Playing ${trackSel.selectedOptions[0]?.textContent || e.track}` : r.error);
+    };
+    row.querySelector("[data-act=del]").onclick = () => { list.splice(i, 1); saveList(); renderAtmosSched(); };
+    wrap.appendChild(row);
+  });
 }
 
 function updateAtmos() {
   const st = state.status.ambience || {};
+  $("atmosSchedNext").textContent = st.timed
+    ? `Playing now: ${state.ambience.find((a) => a.name === st.timed)?.label || st.timed}`
+    : st.next_timed ? `Next timed track: ${st.next_timed}` : "";
   document.querySelectorAll(".atmos-tile").forEach((b) => {
     const chosen = cfg.ambience.on && cfg.ambience.track === b.dataset.track;
     b.classList.toggle("on", chosen && st.playing === b.dataset.track);
@@ -844,6 +888,7 @@ function wire() {
   ["coolMin", "coolMax"].forEach((id) => ($(id).onchange = () => save({ cooldown_min: +$("coolMin").value, cooldown_max: +$("coolMax").value })));
   $("answer").oninput = () => { setSlider("answer", +$("answer").value, true); save({ answer_chance: +$("answer").value }); };
   $("creep").oninput = () => { setSlider("creep", +$("creep").value, true); save({ creep_chance: +$("creep").value }); };
+  $("ambush").oninput = () => { setSlider("ambush", +$("ambush").value, true); save({ ambush_chance: +$("ambush").value }); };
   $("hoursOn").onchange = () => save({ active_hours_enabled: $("hoursOn").checked });
   $("hoursStart").onchange = () => save({ active_start: $("hoursStart").value });
   $("hoursEnd").onchange = () => save({ active_end: $("hoursEnd").value });
@@ -871,6 +916,12 @@ function wire() {
 
   $("atmosVol").oninput = () => { setSlider("atmosVol", +$("atmosVol").value, true); save({ ambience: { volume: +$("atmosVol").value } }); };
   $("atmosHours").onchange = () => save({ ambience: { active_hours_only: $("atmosHours").checked } });
+  $("atmosSchedAdd").onclick = () => {
+    const first = state.ambience[0];
+    if (!first) return toast("Add a background track first");
+    save({ ambience: { schedule: [...cfg.ambience.schedule, { track: first.name, every: 60, volume: 0.3, on: true }] } });
+    renderAtmosSched();
+  };
   $("atmosFile").onchange = async () => {
     const files = $("atmosFile").files;
     if (!files.length) return;

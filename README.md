@@ -5,9 +5,11 @@ A Raspberry Pi 4 that hides creepy sounds around your yard. When someone walks b
 - Up to **7 hiding spots** using the 7.1 outputs of a Denon AVR-1912 (connected to the Pi by HDMI)
 - **Motion sensor**, **automatic timer**, or both
 - Another speaker can "answer" a sound, and a sound can "creep" from speaker to speaker
+- **Jump scares from a hidden spot**: a speaker set to "Jump scares only" (say, across the street) stays silent until a sound at the house has everyone looking the other way, then strikes from behind them
 - Choose which sounds play from which speaker, upload your own sounds, and set active hours
 - **Flicker** between scares, with speed and depth sliders, from a slow breathing to a guttering candle
 - **Background atmospheres** that loop quietly underneath the scares (graveyard, sewer, abandoned asylum, thunderstorm, haunted forest, mad scientist lab, witch's cauldron)
+- **Timed atmosphere tracks**: a track that takes over on the clock (say, a theme every hour on the hour), plays once through at its own volume, then hands back to the loop
 - **Halloween radio** from the free radio-browser.info directory, which can replace the spooky sounds while it plays
 - **Denon controls** on the dashboard: power, input, sound mode, volume (with a safety limit), and automatic on/off with your active hours
 
@@ -61,10 +63,12 @@ Set the sensor's jumper to "single trigger". The two knobs adjust sensitivity an
 ## Using the dashboard
 1. **Speaker Placements:** turn on the spots that have speakers and press **Beep** on each one. If the beep comes from the wrong speaker, change the HDMI channel number until it's right. Rename the spots to match your yard.
 2. **When to Play:** choose **Motion sensor**, **Automatic** (e.g. every 1–3 minutes), or **Both**. Set active hours so the neighbors get some sleep.
+   Turn on **Jump scares only** for a speaker that should never give itself away, like one across the street. It skips ordinary scares, sweeps and creeps; instead, partway through a house sound, it fires (how often: **Jump scare from a hidden spot** under Tricks, never more than once every 90 seconds). Its lead-in silence is cut so it hits instantly. In **Sounds × Speakers**, leave only the loud, sudden sounds checked for it, and take it out of the background atmosphere so the quiet loop doesn't give it away.
 3. **Sounds × Speakers:** uncheck any sound you don't want from a given spot. For example, keep the dog barks by the gate and the ghost moans by the porch.
 4. **Denon Receiver:** the Pi finds the Denon on its own. **Get ready** turns it on and sets the input, sound mode and volume you chose. **Never louder than** caps the volume so nobody can blast the yard from their phone. With the auto option on, the Denon turns on when active hours start and goes to standby when they end.
 5. **Halloween Radio:** search or tap a tag, then press Play. Choose which speakers the radio plays on. With "Radio replaces the spooky sounds" on, scares pause while the radio plays.
-6. **Govee Lights:** press **Find lights**, then give each light a yard spot so it flares when that speaker plays.
+6. **Background Atmosphere → On a schedule:** **Add a timed track**, pick the track and how often ("every hour" is on the hour, "every 30 minutes" is :00 and :30). It fades the loop out, plays the track from the top at its own volume, and fades the loop back in when it ends. **▶ Now** plays it straight away so you can set the volume. It keeps to active hours if the atmosphere does, and sits out while the radio has taken over.
+7. **Govee Lights:** press **Find lights**, then give each light a yard spot so it flares when that speaker plays.
 
 ## Govee light chains
 A string of bulbs is one light to Govee but many points in the yard, so turn on **Chain across the yard** for it. Only the bulbs nearest each sound light up, and sweeps travel along the string.
@@ -105,7 +109,7 @@ Things that cost an evening to work out, kept here so they don't have to be work
 - Commands sent down one session want about 0.15 s between them, and 1.5 s after `PWON`.
 
 ## Tests
-`python3 tests/run.py`, or `python3 tests/run.py track` for a subset. No framework - each file asserts and prints what it checked. They cover the light-chain geometry, sweeps handing off between chains, the segment-mode re-arm, flicker speed and depth, and the Denon session against a stand-in receiver that refuses concurrent connections the way the real one does.
+`python3 tests/run.py`, or `python3 tests/run.py track` for a subset. No framework - each file asserts and prints what it checked. They cover jump-scare spots, timed atmosphere tracks, the light-chain geometry, sweeps handing off between chains, the segment-mode re-arm, flicker speed and depth, and the Denon session against a stand-in receiver that refuses concurrent connections the way the real one does.
 
 ## Sounds
 The repo comes with original sounds, all made from scratch by `make_spooky_sounds.py`, so they're free to use and share:

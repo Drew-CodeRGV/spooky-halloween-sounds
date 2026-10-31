@@ -198,6 +198,13 @@
         </div>
       </fieldset>
     </div>
+    <fieldset class="radio-settings">
+      <legend>On a schedule</legend>
+      <p class="muted small">At its time, a timed track takes over from the loop, plays once all the way through, then hands back. "Every hour" means on the hour.</p>
+      <div id="atmosSched"></div>
+      <button class="btn small" id="atmosSchedAdd">＋ Add a timed track</button>
+      <div class="muted small" id="atmosSchedNext"></div>
+    </fieldset>
   </section>
 
   <!-- Placements -->
@@ -237,6 +244,8 @@
         <legend>Tricks</legend>
         <label class="slider-row"><span>Another speaker answers</span><input type="range" id="answer" min="0" max="1" step="0.05"><output id="answerOut"></output></label>
         <label class="slider-row"><span>Sound creeps between speakers</span><input type="range" id="creep" min="0" max="1" step="0.05"><output id="creepOut"></output></label>
+        <label class="slider-row"><span>Jump scare from a hidden spot</span><input type="range" id="ambush" min="0" max="1" step="0.05"><output id="ambushOut"></output></label>
+        <div class="muted small">While a sound at the house has their attention, a speaker set to "Jump scares only" strikes from behind them. At most once every 90 seconds.</div>
       </fieldset>
       <fieldset>
         <legend>Active hours</legend>

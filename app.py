@@ -83,6 +83,7 @@ def stop():
     eng.stop_sounds()
     if (request.get_json(silent=True) or {}).get("radio"):
         eng.stop_radio()
+        eng.feature = None
         eng.update_config({"ambience": {"on": False}})
     return ok()
 
@@ -197,6 +198,14 @@ def ring_test():
 def lights_test():
     eng.lights.test((request.get_json(force=True) or {}).get("ip", ""))
     return ok()
+
+
+@app.post("/api/ambience/timed")
+def ambience_timed():
+    """Play one of the timed atmosphere tracks right now, to hear how it sits."""
+    body = request.get_json(force=True) or {}
+    err = eng.play_feature(str(body.get("track") or ""), engine._num(body.get("volume"), 0, 1, 0.3))
+    return jsonify({"ok": err is None, "error": err})
 
 
 @app.post("/api/radio/stop")

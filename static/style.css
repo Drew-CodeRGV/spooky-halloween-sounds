@@ -229,6 +229,9 @@ legend { padding: 0 6px; color: var(--muted); font-weight: 600; font-size: .85re
 .station .info span { display: block; font-size: .75rem; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 details summary { cursor: pointer; color: var(--muted); font-weight: 600; margin: 8px 0; }
 .radio-settings { margin-top: 12px; }
+.sched-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.sched-row .slider-row { flex: 1 1 220px; margin: 0; }
+.sched-row select { max-width: 100%; }
 
 .save-state { font-size: .82rem; color: var(--slime); opacity: 0; transition: opacity .3s; }
 .save-state.show { opacity: 1; }

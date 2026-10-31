@@ -33,6 +33,7 @@ AMBIENCE_FADE = 2.5   # seconds to fade a background loop in/out
 CONFIG_PATH = ROOT / "config.json"
 RATE = 48000
 CHANNELS = 8
+AMBUSH_GAP = 90   # seconds: at least this long between jump scares, so they stay a surprise
 BLOCK = 1024
 EXTS = {".wav", ".mp3", ".ogg", ".flac", ".m4a"}
 
@@ -55,6 +56,7 @@ DEFAULT_CONFIG = {
     "cooldown_min": 10, "cooldown_max": 25,  # silence after a motion scare
     "answer_chance": 0.45,
     "creep_chance": 0.15,
+    "ambush_chance": 0.5,             # how often a house scare sets off a jump scare at a hidden spot
     "sweep_seconds": 8,               # how long a full-yard sweep takes
     "sweep_sound": "",                # "" = random
     "sweep_sounds": [],               # sounds that always sweep across the yard when they play
@@ -66,13 +68,16 @@ DEFAULT_CONFIG = {
     "sound_colors": {},               # light color per sound ("#rrggbb"); others pick by name
     "placements": [
         {"id": f"p{i + 1}", "name": name, "terminal": term, "channel": ch,
-         "enabled": i < 2, "volume": 1.0, "muted_sounds": [], "x": MAP_SPOTS[i][0], "y": MAP_SPOTS[i][1]}
+         "enabled": i < 2, "ambush": False, "volume": 1.0, "muted_sounds": [], "x": MAP_SPOTS[i][0], "y": MAP_SPOTS[i][1]}
         for i, (name, (term, ch)) in enumerate(zip(YARD_NAMES, TERMINALS))
     ],
     "radio": {"volume": 0.5, "placements": ["p1", "p2"], "override": True, "autoplay": False,
               "last_url": "", "last_name": ""},
     "ambience": {"on": False, "track": "graveyard.mp3", "volume": 0.4,
-                 "placements": [f"p{i + 1}" for i in range(7)], "active_hours_only": True},
+                 "placements": [f"p{i + 1}" for i in range(7)], "active_hours_only": True,
+                 # Tracks that take over on the clock, play once through, then hand back:
+                 # {"track", "every": minutes (60 = on the hour), "volume", "on"}
+                 "schedule": []},
     "lights": {"enabled": False, "devices": [], "idle_color": "#ff5a00", "idle_brightness": 50,
                "flash_brightness": 100, "flicker": True,
                "flicker_rate": 6.0,      # how many times a second each bulb picks a new level
@@ -112,7 +117,7 @@ def sanitize(cfg):
     cfg["sweep_seconds"] = _num(cfg.get("sweep_seconds"), 2, 60, d["sweep_seconds"])
     cfg["sweep_sound"] = str(cfg.get("sweep_sound") or "")
     cfg["sweep_sounds"] = [str(x) for x in (cfg.get("sweep_sounds") or [])]
-    for k in ("answer_chance", "creep_chance"):
+    for k in ("answer_chance", "creep_chance", "ambush_chance"):
         cfg[k] = _num(cfg.get(k), 0, 1, d[k])
     cfg["active_hours_enabled"] = bool(cfg.get("active_hours_enabled"))
     cfg["disabled_sounds"] = [str(x) for x in (cfg.get("disabled_sounds") or [])]
@@ -125,6 +130,7 @@ def sanitize(cfg):
         p["channel"] = int(_num(p["channel"], 0, CHANNELS - 1, default["channel"]))
         p["volume"] = _num(p["volume"], 0, 1, 1.0)
         p["enabled"] = bool(p["enabled"])
+        p["ambush"] = bool(p.get("ambush"))
         p["name"] = str(p["name"])[:30] or default["name"]
         p["muted_sounds"] = list(p.get("muted_sounds") or [])
         p["x"] = _num(p.get("x"), 3, 97, default["x"])
@@ -138,6 +144,9 @@ def sanitize(cfg):
     am["volume"] = _num(am["volume"], 0, 1, d["ambience"]["volume"])
     am["on"] = bool(am["on"])
     am["active_hours_only"] = bool(am["active_hours_only"])
+    am["schedule"] = [{"track": str(e.get("track") or ""), "every": int(_num(e.get("every"), 5, 1440, 60)),
+                       "volume": _num(e.get("volume"), 0, 1, 0.3), "on": bool(e.get("on", True))}
+                      for e in (am.get("schedule") or [])[:10] if isinstance(e, dict)]
     cfg["lights"] = {**d["lights"], **cfg.get("lights", {})}
     li = cfg["lights"]
     li["enabled"] = bool(li["enabled"])
@@ -278,6 +287,19 @@ def render(mono, gains):
     for ch, g in gains.items():
         buf[:, ch] += mono * g
     return buf
+
+
+def onset(mono, floor=0.05):
+    """Cut the quiet lead-in so a jump scare hits the instant it starts."""
+    if not len(mono):
+        return mono
+    loud = np.flatnonzero(np.abs(mono) >= floor * np.abs(mono).max())
+    return mono[max(0, loud[0] - int(0.01 * RATE)):]
+
+
+def at_house(p):
+    """A speaker that plays the ordinary scares. Jump-scare spots wait for their moment."""
+    return p["enabled"] and not p["ambush"]
 
 
 def yard_order(placements):
@@ -513,10 +535,13 @@ class Ambience:
         self.loading = None
         self.ready = (None, None)  # (filename, buffer) loaded in the background
         self.error = None
+        self.once = None          # a timed track: loaded whole, not blended into a loop
 
     def _load(self, name):
         try:
-            buf = make_loop(decode_stereo(AMBIENCE_DIR / name))
+            buf = decode_stereo(AMBIENCE_DIR / name)
+            if name != self.once:
+                buf = make_loop(buf)
             with self.lock:
                 self.ready = (name, buf)
                 self.error = None
@@ -551,6 +576,11 @@ class Ambience:
         ramp = np.linspace(g0, g1, n, dtype=np.float32)[:, None]
         length = len(buf)
         return [buf[(pos + j * length // k + np.arange(n)) % length] * ramp for j in range(k)]
+
+    def remaining(self):
+        """Seconds left before the current track would wrap round to its start."""
+        with self.lock:
+            return (len(self.buf) - self.pos) / RATE if self.buf is not None else None
 
     def status(self):
         return {"playing": self.track if self.buf is not None and self.gain > 0 else None,
@@ -881,6 +911,10 @@ class Engine:
         self.scaring = threading.Lock()
         self.stop_gen = 0
         self.last_spot = None
+        self.last_ambush = 0
+        self.feature = None      # timed atmosphere track playing now: {"track", "volume", "ends"}
+        self.feature_vol = None  # (track, volume): stays until that track has faded out
+        self.fired = {}          # schedule entry -> clock slot it last went off in
         self.cooldown_until = 0
         self.next_auto = time.time() + 10
         self.last_motion = None
@@ -949,7 +983,7 @@ class Engine:
             return "radio is on"
         if not self.active_hours(cfg):
             return f"outside active hours ({cfg['active_start']}–{cfg['active_end']})"
-        if not any(p["enabled"] and self.allowed(p) for p in cfg["placements"]):
+        if not any(at_house(p) and self.allowed(p) for p in cfg["placements"]):
             return "no speakers turned on"
         return None
 
@@ -983,11 +1017,13 @@ class Engine:
                 out[:, p["channel"]] += src * vol * p["volume"]
         am = cfg["ambience"]
         amb_spots = [p for p in cfg["placements"] if p["enabled"] and p["id"] in am["placements"]]
+        fv = self.feature_vol
+        vol = fv[1] if fv and fv[0] == self.ambience.track else am["volume"]
         blocks = self.ambience.read(BLOCK, len(amb_spots))
         if blocks:
             for i, (p, blk) in enumerate(zip(amb_spots, blocks)):
                 src = blk.mean(axis=1) if len(amb_spots) == 1 else blk[:, i % 2]
-                out[:, p["channel"]] += src * am["volume"] * p["volume"]
+                out[:, p["channel"]] += src * vol * p["volume"]
         out *= cfg["master_volume"]
         self.out.write(np.clip(out, -32768, 32767).astype(np.int16).tobytes())
 
@@ -1043,14 +1079,24 @@ class Engine:
     def _scare(self, reason):
         cfg = copy.deepcopy(self.config)
         gen = self.stop_gen
-        spots = yard_order([p for p in cfg["placements"] if p["enabled"] and self.allowed(p)])
+        spots = yard_order([p for p in cfg["placements"] if at_house(p) and self.allowed(p)])
         if not spots:
             self.add_log("Nothing to play: turn on a speaker and give it some sounds")
             return
         self.add_log(f"Scare! ({reason})")
+        hidden = [p for p in cfg["placements"] if p["enabled"] and p["ambush"] and self.allowed(p)]
+        ambush = None
+        if hidden and random.random() < cfg["ambush_chance"] and time.time() - self.last_ambush >= AMBUSH_GAP:
+            ambush = random.choice(hidden)
 
         def wait(v):
+            nonlocal ambush
+            jump = None
+            if ambush:  # only the first house sound gets one
+                jump, ambush = self._spring(ambush, v, gen), None
             v["done"].wait()
+            if jump:
+                jump["done"].wait()
             return gen == self.stop_gen
 
         if len(spots) > 1 and random.random() < cfg["creep_chance"]:
@@ -1082,6 +1128,16 @@ class Engine:
             wait(self._play(random.choice(opts), [other]))
             self.last_spot = other["id"]
 
+    def _spring(self, spot, v, gen):
+        """Jump scare at a hidden spot partway through house sound v, while all eyes are on the house."""
+        v["done"].wait(len(v["buf"]) / RATE * random.uniform(0.4, 0.75))
+        if v["done"].is_set() or gen != self.stop_gen:
+            return None
+        sound = random.choice(self.allowed(spot))
+        self.last_ambush = time.time()
+        self.add_log(f"Jump scare! {Path(sound).stem} from the {spot['name']}")
+        return self._add_voice(render(onset(self.sounds[sound]), {spot["channel"]: spot["volume"]}))
+
     def play_now(self, sound=None, placement_id=None, gain=1.0):
         """Dashboard soundboard: stop whatever is playing and play right away."""
         cfg = self.config
@@ -1093,7 +1149,7 @@ class Engine:
         if placement_id:
             spot = self.placement(placement_id)
         else:
-            choices = [p for p in cfg["placements"] if p["enabled"] and (sound in self.allowed(p, include_off=True) if sound else self.allowed(p))]
+            choices = [p for p in cfg["placements"] if at_house(p) and (sound in self.allowed(p, include_off=True) if sound else self.allowed(p))]
             spot = random.choice(choices) if choices else None
         if spot is None:
             return "No speaker available for that sound"
@@ -1111,7 +1167,7 @@ class Engine:
     def _sweep(self, direction="ltr", sound=None, seconds=None, stop=True):
         """Start a sweep. Returns (error, voice)."""
         cfg = self.config
-        spots = yard_order([p for p in cfg["placements"] if p["enabled"]])
+        spots = yard_order([p for p in cfg["placements"] if at_house(p)])
         if len(spots) < 2:
             return "Turn on at least two speakers to sweep across.", None
         if direction == "random":
@@ -1147,6 +1203,7 @@ class Engine:
     def _schedule_loop(self):
         while True:
             time.sleep(0.5)
+            self._check_schedule()
             self.ambience.want = self.ambience_wanted()
             self._watch_hdmi()
             if self.config["mode"] in ("auto", "both") and time.time() >= self.next_auto \
@@ -1185,7 +1242,7 @@ class Engine:
             for p in cfg["placements"]:
                 if p["enabled"] and word in p["name"].lower():
                     return p
-        return next((p for p in cfg["placements"] if p["enabled"]), None)
+        return next((p for p in cfg["placements"] if at_house(p)), None)
 
     def ring_device_counts(self, device):
         chosen = self.config["ring"]["devices"]
@@ -1228,13 +1285,64 @@ class Engine:
     def ambience_wanted(self):
         cfg = self.config
         am = cfg["ambience"]
+        if self.radio.playing and cfg["radio"]["override"]:
+            self.feature = None
+            return None
+        f = self.feature
+        if f:
+            a = self.ambience
+            if f["ends"] is None and a.track == f["track"] and a.gain > 0:
+                # It's started from the top: hand back just as it finishes, before it repeats.
+                f["ends"] = time.time() + a.remaining() - AMBIENCE_FADE - 0.5
+            if f["ends"] is None or time.time() < f["ends"]:
+                return f["track"]
+            self.feature = None
         if not am["on"] or not (AMBIENCE_DIR / am["track"]).is_file():
             return None
         if am["active_hours_only"] and not self.active_hours(cfg):
             return None
-        if self.radio.playing and cfg["radio"]["override"]:
-            return None
         return am["track"]
+
+    def play_feature(self, track, volume):
+        """Play an atmosphere track once through, over the regular loop. Returns an error or None."""
+        if not (AMBIENCE_DIR / track).is_file():
+            return f"{track} isn't on the Pi"
+        a = self.ambience
+        with a.lock:
+            a.once = track
+            if a.track == track:   # already the loop: load it again so it starts from the top, unblended
+                a.track = None
+        self.feature = {"track": track, "volume": volume, "ends": None}
+        self.feature_vol = (track, volume)
+        self.add_log(f"Atmosphere: {Path(track).stem} (timed)")
+        return None
+
+    def _check_schedule(self, now=None):
+        """Start any timed atmosphere track whose time has come, e.g. every hour on the hour."""
+        now = now or datetime.datetime.now()
+        if self.feature_vol and self.feature is None and self.ambience.track != self.feature_vol[0]:
+            self.feature_vol = self.ambience.once = None
+        cfg = self.config
+        am = cfg["ambience"]
+        minute = now.hour * 60 + now.minute
+        for e in am["schedule"]:
+            if not e["on"] or minute % e["every"]:
+                continue
+            key, slot = (e["track"], e["every"]), (now.date(), minute)
+            if self.fired.get(key) == slot:
+                continue
+            self.fired[key] = slot
+            if self.feature or (am["active_hours_only"] and not self.active_hours(cfg)):
+                continue
+            if not (self.radio.playing and cfg["radio"]["override"]):
+                self.play_feature(e["track"], e["volume"])
+
+    def next_feature(self, now=None):
+        """When the next timed atmosphere track is due, as a datetime, or None."""
+        now = now or datetime.datetime.now()
+        minute = now.hour * 60 + now.minute
+        waits = [e["every"] - minute % e["every"] for e in self.config["ambience"]["schedule"] if e["on"]]
+        return (now.replace(second=0, microsecond=0) + datetime.timedelta(minutes=min(waits))) if waits else None
 
     def ambience_tracks(self):
         if not AMBIENCE_DIR.is_dir():
@@ -1408,7 +1516,8 @@ class Engine:
                 "audio_error": self.out.error,
                 "radio": self.radio.status(),
                 "denon": self.denon.status,
-                "ambience": self.ambience.status(),
+                "ambience": {**self.ambience.status(), "timed": self.feature and self.feature["track"],
+                             "next_timed": (lambda t: t and t.strftime("%-I:%M %p"))(self.next_feature())},
                 "lights_schedule": self._schedule_status(),
                 "ring": {**self.ring.status, "door_spot": (self.ring_spot() or {}).get("id")},
                 "time": datetime.datetime.now().strftime("%-I:%M %p"),
