@@ -15,8 +15,10 @@ set -u
 APP_DIR="${1:-$(cd "$(dirname "$0")" && pwd)}"
 GOOD="$(dirname "$APP_DIR")/.spooky-known-good"
 REPO_URL="https://github.com/Drew-CodeRGV/spooky-halloween-sounds.git"
-CORE=(app.py engine.py denon.py static/index.html static/app.js static/style.css
-      static/remote.html static/remote.js static/remote.css static/sw.js static/manifest.webmanifest)
+CORE=(app.py engine.py denon.py govee.py static/index.html static/app.js static/style.css
+      static/remote.html static/remote.js static/remote.css static/sw.js static/manifest.webmanifest
+      static/christmas.html static/christmas.css static/remote-christmas.html static/manifest-christmas.webmanifest)
+SETTINGS=(config.json config-christmas.json show.json)   # saved on the Pi, never in the repo
 
 log() { echo "selfheal: $*"; }
 
@@ -29,15 +31,17 @@ problems() {  # prints what's wrong with a copy of the app; prints nothing if it
   done
   python3 - "$d" <<'PY' 2>/dev/null || echo "Python code doesn't parse"
 import ast, sys
-for f in ("app.py", "engine.py", "denon.py"):
+for f in ("app.py", "engine.py", "denon.py", "govee.py"):
     ast.parse(open(f"{sys.argv[1]}/{f}").read())
 PY
-  if [[ -d "$d/sounds" ]]; then
-    find "$d/sounds" -type f -size 0 -printf "%P is empty\n" 2>/dev/null | sed 's/^/sounds\//'
-  fi
-  if [[ -f "$d/config.json" ]] && ! valid_json "$d/config.json"; then
-    echo "config.json is damaged"
-  fi
+  for f in sounds sounds-christmas; do
+    [[ -d "$d/$f" ]] && find "$d/$f" -type f -size 0 -printf "$f/%P is empty\n" 2>/dev/null
+  done
+  for f in "${SETTINGS[@]}"; do
+    if [[ -f "$d/$f" ]] && ! valid_json "$d/$f"; then
+      echo "$f is damaged"
+    fi
+  done
 }
 
 ISSUES="$(problems "$APP_DIR")"
@@ -48,14 +52,18 @@ if [[ -n "$ISSUES" ]]; then
   if [[ -d "$GOOD" ]] && [[ -z "$(problems "$GOOD")" ]]; then
     log "restoring from the last known-good copy"
     KEEP=()   # keep settings saved since the last start, as long as they're intact
-    [[ -f "$APP_DIR/config.json" ]] && valid_json "$APP_DIR/config.json" && KEEP=(--exclude config.json)
+    for f in "${SETTINGS[@]}"; do
+      [[ -f "$APP_DIR/$f" ]] && valid_json "$APP_DIR/$f" && KEEP+=(--exclude "$f")
+    done
     rsync -a --exclude .git "${KEEP[@]}" "$GOOD/" "$APP_DIR/"
     sync
   else
     log "no usable known-good copy; trying a fresh download"
     TMP="$(mktemp -d)"
     if git clone -q --depth 1 "$REPO_URL" "$TMP/app" 2>/dev/null; then
-      [[ -f "$APP_DIR/config.json" ]] && valid_json "$APP_DIR/config.json" && cp "$APP_DIR/config.json" "$TMP/app/"
+      for f in "${SETTINGS[@]}"; do
+        [[ -f "$APP_DIR/$f" ]] && valid_json "$APP_DIR/$f" && cp "$APP_DIR/$f" "$TMP/app/"
+      done
       rsync -a --exclude .git "$TMP/app/" "$APP_DIR/"
       sync
     else
@@ -64,13 +72,15 @@ if [[ -n "$ISSUES" ]]; then
     rm -rf "$TMP"
   fi
   # Whatever is still broken can't be recovered: clear it so the app can start cleanly.
-  if [[ -d "$APP_DIR/sounds" ]]; then
-    find "$APP_DIR/sounds" -type f -size 0 -print -delete 2>/dev/null | sed 's/^/selfheal: removed empty /'
-  fi
-  if [[ -f "$APP_DIR/config.json" ]] && ! valid_json "$APP_DIR/config.json"; then
-    mv "$APP_DIR/config.json" "$APP_DIR/config.json.damaged"
-    log "settings were damaged and unrecoverable; starting with defaults (old file: config.json.damaged)"
-  fi
+  for f in sounds sounds-christmas; do
+    [[ -d "$APP_DIR/$f" ]] && find "$APP_DIR/$f" -type f -size 0 -print -delete 2>/dev/null | sed 's/^/selfheal: removed empty /'
+  done
+  for f in "${SETTINGS[@]}"; do
+    if [[ -f "$APP_DIR/$f" ]] && ! valid_json "$APP_DIR/$f"; then
+      mv "$APP_DIR/$f" "$APP_DIR/$f.damaged"
+      log "$f was damaged and unrecoverable; starting with defaults (old file: $f.damaged)"
+    fi
+  done
   sync
   ISSUES="$(problems "$APP_DIR")"
   if [[ -n "$ISSUES" ]]; then

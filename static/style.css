@@ -30,6 +30,15 @@ body {
 }
 
 .top { text-align: center; padding: 28px 16px 8px; }
+/* Which show is on: one tab per show, the live one highlighted */
+.show-tabs { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin: -12px auto 18px; max-width: 1100px; }
+.show-tabs button {
+  font: 600 .9rem/1.2 Inter, system-ui, sans-serif; color: var(--muted); cursor: pointer;
+  padding: 8px 16px; border-radius: 999px; background: var(--black); border: 1px solid var(--line);
+}
+.show-tabs button:hover { color: var(--text); border-color: var(--purple-3); }
+.show-tabs button.on { color: var(--text); border-color: var(--pumpkin); box-shadow: 0 0 14px rgba(255, 122, 26, .35); cursor: default; }
+.show-tabs button.busy { opacity: .6; cursor: progress; }
 h1 {
   font-family: Creepster, "Chiller", fantasy;
   font-weight: 400;

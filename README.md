@@ -13,6 +13,15 @@ A Raspberry Pi 4 that hides creepy sounds around your yard. When someone walks b
 - **Halloween radio** from the free radio-browser.info directory, which can replace the spooky sounds while it plays
 - **Denon controls** on the dashboard: power, input, sound mode, volume (with a safety limit), and automatic on/off with your active hours
 
+## Two shows: Halloween and Christmas
+The tabs at the top of the dashboard switch the yard between the **Lentz Spooktacular Yard** (Halloween) and the **Lentz Holiday Spectacular** (Christmas). There's one set of speakers, one receiver and one string of lights, so the tab you pick is the show that's on: it asks first, stops what's playing, and the dashboard and phone remote change to that show's look.
+
+- Each show keeps its **own settings, sounds, atmosphere loops and radio stations**. Halloween's are where they always were (`config.json`, `sounds/`); Christmas has `config-christmas.json` and `sounds-christmas/`.
+- The **first** time you switch to Christmas, it starts as a copy of Halloween: the same speaker spots, yard map, timing, tricks and lights. It leaves out Halloween's sounds, its atmosphere loop and timed tracks, and its radio station, and starts the lights' idle color at red.
+- Settings that describe the **hardware** stay the same in both shows: the audio device, motion sensor pin, Denon receiver, which Govee lights there are and your town, and which Ring devices count. Change one in either show and the other picks it up.
+- The installer makes the Christmas starter sounds on the Pi with `make_christmas_sounds.py`: sleigh bells, music-box carols, a church-bell peal, a sparkle chime, reindeer on the roof, and fireplace, snowy-night and Santa's-workshop loops.
+- `show.json` on the Pi records which show is on, so it comes back to the same one after a restart.
+
 ## Install (fresh Raspberry Pi)
 
 1. Flash **Raspberry Pi OS Lite (64-bit)** with Raspberry Pi Imager. In its settings, set your Wi-Fi, a username/password, and turn on SSH.
@@ -109,7 +118,7 @@ Things that cost an evening to work out, kept here so they don't have to be work
 - Commands sent down one session want about 0.15 s between them, and 1.5 s after `PWON`.
 
 ## Tests
-`python3 tests/run.py`, or `python3 tests/run.py track` for a subset. No framework - each file asserts and prints what it checked. They cover jump-scare spots, timed atmosphere tracks, the light-chain geometry, sweeps handing off between chains, the segment-mode re-arm, flicker speed and depth, and the Denon session against a stand-in receiver that refuses concurrent connections the way the real one does.
+`python3 tests/run.py`, or `python3 tests/run.py track` for a subset. No framework - each file asserts and prints what it checked. They cover switching between the two shows, jump-scare spots, timed atmosphere tracks, the light-chain geometry, sweeps handing off between chains, the segment-mode re-arm, flicker speed and depth, and the Denon session against a stand-in receiver that refuses concurrent connections the way the real one does.
 
 ## Sounds
 The repo comes with original sounds, all made from scratch by `make_spooky_sounds.py`, so they're free to use and share:
@@ -146,9 +155,10 @@ Pandora doesn't let other devices play its stations without a paid account and l
 - `app.py`: the web dashboard and its API
 - `denon.py`: Denon network control (one held session on port 23)
 - `engine.py`: the audio engine (always-on 7.1 mixer to HDMI), scare scheduler, motion sensor and radio
-- `static/`: dashboard (`index.html`), phone remote (`remote.html`), app manifest, service worker, icons
+- `static/`: dashboard (`index.html`), phone remote (`remote.html`), app manifest, service worker, icons; the Christmas show's versions (`christmas.html`, `remote-christmas.html`, `manifest-christmas.webmanifest`) share the same scripts and add `christmas.css`
 - `make_icons.py`: draws the app icons
 - `make_spooky_sounds.py`: synthesizes the scare sounds and background loops
+- `make_christmas_sounds.py`: synthesizes the Christmas show's sounds and loops into `sounds-christmas/`
 - `make_placeholder_sounds.py`: makes the starter growls, heartbeat, breathing and moan
 - `walk_bulbs.py`: lights the chains one bulb at a time, for working out each chain's span
 - `tests/`: `python3 tests/run.py` - light geometry, sweeps, segment-mode re-arm, flicker, Denon session

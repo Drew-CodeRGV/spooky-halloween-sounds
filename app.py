@@ -23,19 +23,38 @@ def ok(**extra):
     return jsonify({"ok": True, **extra})
 
 
+# Each show has its own pages; the address stays the same and serves whichever show is on.
+PAGES = {"halloween": ("index.html", "remote.html", "manifest.webmanifest"),
+         "christmas": ("christmas.html", "remote-christmas.html", "manifest-christmas.webmanifest")}
+
+
+def show_page(i):
+    resp = send_from_directory(app.static_folder, PAGES[eng.show][i])
+    resp.headers["Cache-Control"] = "no-cache"   # the same address changes with the show
+    return resp
+
+
 @app.get("/")
 def index():
-    return send_from_directory(app.static_folder, "index.html")
+    return show_page(0)
 
 
 @app.get("/remote")
 def remote():
-    return send_from_directory(app.static_folder, "remote.html")
+    return show_page(1)
 
 
 @app.get("/manifest.webmanifest")
 def manifest():
-    return send_from_directory(app.static_folder, "manifest.webmanifest", mimetype="application/manifest+json")
+    resp = show_page(2)
+    resp.mimetype = "application/manifest+json"
+    return resp
+
+
+@app.post("/api/show")
+def show():
+    err = eng.switch_show(str((request.get_json(force=True) or {}).get("show") or ""))
+    return jsonify({"ok": err is None, "error": err, "show": eng.show})
 
 
 @app.get("/sw.js")
@@ -48,7 +67,7 @@ def service_worker():
 @app.get("/sounds/<path:name>")
 def sound_file(name):
     """The raw audio file, so the dashboard can preview it on your own computer or phone."""
-    return send_from_directory(engine.SOUNDS_DIR, name, conditional=True)
+    return send_from_directory(engine.SOUNDS_DIR, name, conditional=True, max_age=0)
 
 
 @app.get("/api/state")

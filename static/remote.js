@@ -1,10 +1,15 @@
-// Spooky phone remote
+// Spooky phone remote (and the Christmas one: same logic, its own words)
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const buzz = (ms = 30) => navigator.vibrate && navigator.vibrate(ms);
 
 let state = null;
 let layoutKey = "";
+const SHOW = document.documentElement.dataset.show || "halloween";
+const WORDS = {
+  halloween: { fired: "Boo! 👻", quiet: "Quiet… for now.", icon: "👻" },
+  christmas: { fired: "Ho ho ho! 🎅", quiet: "All is calm…", icon: "🎄" },
+}[SHOW];
 
 async function api(path, body) {
   const r = await fetch(path, body === undefined ? {} : {
@@ -25,7 +30,7 @@ function toast(msg) {
 async function scare() {
   buzz(60);
   const r = await api("/api/scare", {});
-  toast(r.started ? "Boo! 👻" : "Already playing…");
+  toast(r.started ? WORDS.fired : "Already playing…");
   setTimeout(refresh, 150);
 }
 async function stopAll() {
@@ -53,8 +58,10 @@ async function setConfig(patch) {
 
 const ATMOS_ICONS = [["grave", "🪦"], ["cemet", "🪦"], ["sewer", "🐀"], ["asylum", "🏚️"], ["ward", "🏚️"],
   ["thunder", "⛈️"], ["storm", "⛈️"], ["rain", "🌧️"], ["forest", "🌲"], ["lab", "⚗️"], ["witch", "🧙"],
-  ["cauldron", "🧙"], ["wind", "🌬️"], ["swamp", "🐸"], ["crypt", "⚰️"], ["church", "⛪"]];
-const atmosIcon = (name) => (ATMOS_ICONS.find(([k]) => name.toLowerCase().includes(k)) || [, "👻"])[1];
+  ["cauldron", "🧙"], ["wind", "🌬️"], ["swamp", "🐸"], ["crypt", "⚰️"], ["church", "⛪"],
+  ["fire", "🔥"], ["snow", "❄️"], ["sleigh", "🛷"], ["bell", "🔔"], ["workshop", "🧝"], ["elf", "🧝"],
+  ["carol", "🎶"], ["santa", "🎅"], ["reindeer", "🦌"], ["music_box", "🎁"]];
+const atmosIcon = (name) => (ATMOS_ICONS.find(([k]) => name.toLowerCase().includes(k)) || [, WORDS.icon])[1];
 
 // ---------- rendering ----------
 function renderLayout() {
@@ -117,7 +124,7 @@ function renderLive() {
     const label = state.sounds.find((s) => s.name === playing.sound)?.label || playing.sound;
     now.textContent = `🔊 ${label} · ${where}`;
   } else {
-    now.textContent = radioOn ? `🎵 ${st.radio.name}` : st.blocked && cfg.mode !== "off" ? `Sleeping: ${st.blocked}` : "Quiet… for now.";
+    now.textContent = radioOn ? `🎵 ${st.radio.name}` : st.blocked && cfg.mode !== "off" ? `Sleeping: ${st.blocked}` : WORDS.quiet;
   }
   now.classList.toggle("on", !!playing || radioOn);
 
@@ -163,6 +170,7 @@ async function refresh() {
     $("pill").textContent = "Can't reach the Pi";
     return;
   }
+  if (state.show && state.show !== SHOW) return location.reload();   // the show changed
   renderLayout();
   renderLive();
 }

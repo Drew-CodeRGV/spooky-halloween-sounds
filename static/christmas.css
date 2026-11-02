@@ -1,0 +1,109 @@
+/* Lentz Holiday Spectacular: the Christmas show's look, over style.css.
+   The variable names come from the Halloween theme; here they carry pine, holly and gold. */
+:root {
+  --purple-1: #0a2219;   /* page */
+  --purple-2: #134a33;   /* chips, badges */
+  --purple-3: #2b7a52;   /* hover, focus */
+  --black: #071711;      /* panels */
+  --black-2: #0d241a;    /* inputs, tiles */
+  --line: #1f3f30;
+  --text: #f6f2e9;       /* snow */
+  --muted: #a7c1b2;
+  --pumpkin: #e8343f;    /* the main accent: holly red */
+  --slime: #f3c455;      /* on, playing, armed: gold */
+  --blood: #ff5964;
+  --gold: #f3c455;
+  --radius: 16px;
+}
+
+html { background: var(--purple-1); }
+body {
+  font-family: Nunito, Inter, system-ui, -apple-system, sans-serif;
+  background:
+    radial-gradient(ellipse at 15% -10%, rgba(232, 52, 63, .22) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 0%, rgba(43, 122, 82, .45) 0%, transparent 55%),
+    var(--purple-1);
+  background-attachment: fixed;
+}
+/* Snow: two layers of flakes drifting down at different speeds */
+body::before, body::after {
+  content: ""; position: fixed; inset: -100px 0 0; pointer-events: none; z-index: 0;
+  background-image:
+    radial-gradient(2px 2px at 20px 30px, rgba(255, 255, 255, .55), transparent 60%),
+    radial-gradient(2px 2px at 90px 120px, rgba(255, 255, 255, .4), transparent 60%),
+    radial-gradient(1.5px 1.5px at 150px 60px, rgba(255, 255, 255, .5), transparent 60%),
+    radial-gradient(2.5px 2.5px at 200px 170px, rgba(255, 255, 255, .35), transparent 60%);
+  background-size: 240px 220px;
+  animation: snowfall 26s linear infinite;
+}
+body::after { background-size: 330px 300px; opacity: .6; animation-duration: 40s; }
+@keyframes snowfall { to { transform: translateY(220px); } }
+@media (prefers-reduced-motion: reduce) { body::before, body::after { animation: none; } }
+.top, main, .r-top, .r-main { position: relative; z-index: 1; }
+
+h1, h2 { font-family: "Mountains of Christmas", Georgia, serif; font-weight: 700; letter-spacing: .5px; }
+h1 {
+  color: var(--gold);
+  text-shadow: 0 0 22px rgba(243, 196, 85, .35), 0 3px 0 #5b0f15;
+}
+h2 { color: var(--gold); font-size: 1.85rem; }
+
+.panel { border-top: 3px solid var(--pumpkin); box-shadow: 0 10px 40px rgba(0, 0, 0, .5); }
+.panel:nth-of-type(even) { border-top-color: var(--purple-3); }
+
+.btn.pumpkin { color: #fff; background: linear-gradient(180deg, #f04a54, #c8202b); border-color: #ff7a82; }
+.btn.pumpkin:hover { background: linear-gradient(180deg, #ff5a63, #d62833); }
+.segmented button.on { color: #fff; }
+.btn.danger { color: #ffc9cd; border-color: #6a1f26; }
+.pill.armed { box-shadow: 0 0 12px rgba(243, 196, 85, .3); }
+.atmos-tile.on { box-shadow: 0 0 18px rgba(243, 196, 85, .25); }
+.preview-btn.previewing { text-shadow: 0 0 8px rgba(243, 196, 85, .7); }
+.spot.dragging .dot { box-shadow: 0 0 16px rgba(243, 196, 85, .5); }
+.switch span { background: #29473a; }
+.switch input:checked + span::after { background: #3a2a00; }
+.show-tabs button { font-family: Nunito, Inter, system-ui, sans-serif; }
+.show-tabs button.on { box-shadow: 0 0 14px rgba(232, 52, 63, .4); }
+.toggle input { accent-color: var(--purple-3); }
+
+/* The yard on a snowy night: pale ground, the house trimmed in lights, a wreath on the door */
+.yard {
+  background:
+    radial-gradient(circle at 50% 0%, rgba(243, 196, 85, .14), transparent 60%),
+    radial-gradient(1.5px 1.5px at 12px 14px, rgba(255, 255, 255, .25), transparent 60%) 0 0 / 34px 30px,
+    linear-gradient(180deg, #10283a 0%, #1a3346 55%, #24384a 100%);
+}
+.house { background: #2a1d1a; border-color: #4a3530; }
+.house::before {   /* a string of colored lights along the eaves */
+  content: ""; position: absolute; top: -4px; left: -10px; right: -10px; height: 6px;
+  background: repeating-linear-gradient(90deg, #e8343f 0 6px, transparent 6px 14px, #f3c455 14px 20px,
+    transparent 20px 28px, #3fbf6a 28px 34px, transparent 34px 42px);
+  filter: drop-shadow(0 0 4px rgba(243, 196, 85, .8));
+}
+.house .roof { background: #e9eef2; }
+.house .door { background: #9b1c24; opacity: 1; }
+.house .door::after {
+  content: ""; position: absolute; top: 5px; left: 50%; width: 12px; height: 12px; transform: translateX(-50%);
+  border-radius: 50%; border: 3px solid #2f9a58; box-sizing: border-box;
+}
+.house span { color: #d9cfc2; }
+.sidewalk { background: #c9d3da; border-top-color: #eef3f6; color: #4f5d68; }
+.chain-line { border-top-color: rgba(243, 196, 85, .5); }
+.chain-line .bulb-dot { background: var(--gold); box-shadow: 0 0 7px rgba(243, 196, 85, .7); }
+.spot .label { text-shadow: 0 1px 3px #000, 0 0 2px #000; }
+
+/* Phone remote: the big button is a red ornament with a gold cap */
+.scare-btn {
+  position: relative; color: #fff;
+  background: radial-gradient(circle at 35% 30%, #ff8a90, var(--pumpkin) 50%, #8f1018);
+  border-color: #3a0408;
+  box-shadow: 0 0 0 3px var(--gold), 0 0 40px rgba(232, 52, 63, .5), inset 0 -10px 24px rgba(0, 0, 0, .3);
+}
+.scare-btn::before {
+  content: ""; position: absolute; top: -16px; left: 50%; transform: translateX(-50%);
+  width: 34px; height: 18px; border-radius: 4px 4px 2px 2px; background: linear-gradient(90deg, #b8892a, #f3c455, #b8892a);
+}
+.scare-label { font-family: "Mountains of Christmas", Georgia, serif; font-weight: 700; font-size: 1.7rem; letter-spacing: 1px; }
+@keyframes scarepulse {
+  from { box-shadow: 0 0 0 3px var(--gold), 0 0 20px rgba(232, 52, 63, .4); }
+  to { box-shadow: 0 0 0 3px var(--gold), 0 0 70px 10px rgba(243, 196, 85, .7); }
+}

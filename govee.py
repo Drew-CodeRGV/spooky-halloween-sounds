@@ -8,6 +8,7 @@ No cloud, no account, and fast enough to flicker along with a sound.
 """
 import base64
 import json
+import re
 import socket
 import time
 
@@ -115,6 +116,14 @@ SOUND_COLORS = [
     (("monster", "growl", "roar", "beast", "howl", "wolf", "blood", "scream"), (255, 0, 0)),
     (("bell", "church", "chain"), (255, 180, 60)),
 ]
+# Christmas words, matched as whole words ("icy" isn't in "Voicy", "tree" isn't in "Street")
+# and only after the list above, so no Halloween sound changes color.
+XMAS_COLORS = [
+    ({"snow", "snowy", "frost", "frosty", "winter", "icy", "blizzard"}, (150, 200, 255)),
+    ({"santa", "reindeer", "rudolph", "hohoho"}, (255, 20, 20)),
+    ({"elf", "elves", "grinch", "holly", "mistletoe", "tree"}, (0, 200, 40)),
+    ({"sleigh", "jingle", "chime", "chimes", "sparkle", "music", "carol", "carols", "angel"}, (255, 190, 60)),
+]
 DEFAULT_FLASH = (255, 90, 0)
 
 
@@ -122,5 +131,9 @@ def color_for(sound_name):
     n = sound_name.lower()
     for words, rgb in SOUND_COLORS:
         if any(w in n for w in words):
+            return rgb
+    tokens = set(re.split(r"[^a-z]+", n))
+    for words, rgb in XMAS_COLORS:
+        if words & tokens:
             return rgb
     return DEFAULT_FLASH

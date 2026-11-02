@@ -31,6 +31,19 @@ SOUNDS_DIR = ROOT / "sounds"
 AMBIENCE_DIR = SOUNDS_DIR / "ambience"
 AMBIENCE_FADE = 2.5   # seconds to fade a background loop in/out
 CONFIG_PATH = ROOT / "config.json"
+# One yard, two shows. Each keeps its own settings and its own sounds; the speakers,
+# receiver and lights are the same hardware whichever one is on.
+SHOWS = {
+    "halloween": {"title": "Lentz Spooktacular Yard", "config": ROOT / "config.json", "sounds": ROOT / "sounds",
+                  "scare": "Scare", "jump": "Jump scare", "ambience": "graveyard.mp3", "idle_color": "#ff5a00"},
+    "christmas": {"title": "Lentz Holiday Spectacular", "config": ROOT / "config-christmas.json",
+                  "sounds": ROOT / "sounds-christmas", "scare": "Jingle", "jump": "Surprise",
+                  "ambience": "crackling_fireplace.mp3", "idle_color": "#ff2a36"},
+}
+SHOW_PATH = ROOT / "show.json"   # which show is on: {"live": "christmas"}
+# Settings that describe the hardware rather than the show, kept the same in every show
+SHARED = {"audio_device": None, "pir_pin": None, "denon": None,
+          "lights": ("devices", "lat", "lon", "place"), "ring": ("devices",)}
 RATE = 48000
 CHANNELS = 8
 AMBUSH_GAP = 90   # seconds: at least this long between jump scares, so they stay a surprise
@@ -198,6 +211,12 @@ def sanitize(cfg):
     return cfg
 
 
+def shared_part(cfg):
+    out = {}
+    share(cfg, out)
+    return out
+
+
 def load_config():
     cfg = copy.deepcopy(DEFAULT_CONFIG)
     if CONFIG_PATH.exists():
@@ -207,6 +226,49 @@ def load_config():
         except (OSError, ValueError):
             pass
     return sanitize(cfg)
+
+
+def use_show(name):
+    """Point the settings file and sound folders at a show."""
+    global CONFIG_PATH, SOUNDS_DIR, AMBIENCE_DIR
+    show = SHOWS[name]
+    CONFIG_PATH, SOUNDS_DIR = show["config"], show["sounds"]
+    AMBIENCE_DIR = SOUNDS_DIR / "ambience"
+
+
+def live_show():
+    try:
+        name = json.loads(SHOW_PATH.read_text()).get("live")
+    except (OSError, ValueError, AttributeError):
+        name = None
+    return name if name in SHOWS else "halloween"
+
+
+def share(src, dst):
+    """Copy the hardware settings from one show's config into another's."""
+    for key, sub in SHARED.items():
+        if key not in src:
+            continue
+        if sub is None:
+            dst[key] = copy.deepcopy(src[key])
+        else:
+            dst.setdefault(key, {})
+            for k in sub:
+                if k in src[key]:
+                    dst[key][k] = copy.deepcopy(src[key][k])
+
+
+def first_show_config(src, name):
+    """A show's first config: a copy of the one running now, without any of its sounds or stations."""
+    cfg = copy.deepcopy(src)
+    cfg["disabled_sounds"], cfg["sound_colors"], cfg["sweep_sound"], cfg["sweep_sounds"] = [], {}, "", []
+    for p in cfg["placements"]:
+        p["muted_sounds"] = []
+    cfg["ambience"].update(track=SHOWS[name]["ambience"], schedule=[])
+    cfg["radio"].update(last_url="", last_name="", autoplay=False)
+    cfg["ring"].update(motion_sound="", ding_sound="")
+    cfg["lights"]["idle_color"] = SHOWS[name]["idle_color"]
+    return cfg
 
 
 def write_safely(path, data):
@@ -899,6 +961,8 @@ def search_stations(term):
 class Engine:
     def __init__(self):
         self.lock = threading.RLock()
+        self.show = live_show()
+        use_show(self.show)
         self.config = load_config()
         self.log = collections.deque(maxlen=60)
         self.sounds = {}       # filename -> mono samples
@@ -1083,7 +1147,7 @@ class Engine:
         if not spots:
             self.add_log("Nothing to play: turn on a speaker and give it some sounds")
             return
-        self.add_log(f"Scare! ({reason})")
+        self.add_log(f"{SHOWS[self.show]['scare']}! ({reason})")
         hidden = [p for p in cfg["placements"] if p["enabled"] and p["ambush"] and self.allowed(p)]
         ambush = None
         if hidden and random.random() < cfg["ambush_chance"] and time.time() - self.last_ambush >= AMBUSH_GAP:
@@ -1135,7 +1199,7 @@ class Engine:
             return None
         sound = random.choice(self.allowed(spot))
         self.last_ambush = time.time()
-        self.add_log(f"Jump scare! {Path(sound).stem} from the {spot['name']}")
+        self.add_log(f"{SHOWS[self.show]['jump']}! {Path(sound).stem} from the {spot['name']}")
         return self._add_voice(render(onset(self.sounds[sound]), {spot["channel"]: spot["volume"]}))
 
     def play_now(self, sound=None, placement_id=None, gain=1.0):
@@ -1483,12 +1547,53 @@ class Engine:
                     cfg[k] = v
             cfg = sanitize(cfg)
             timing_changed = any(cfg[k] != self.config[k] for k in ("mode", "auto_min", "auto_max"))
+            hardware_changed = shared_part(cfg) != shared_part(self.config)
             self.config = cfg
             save_config(cfg)
+            if hardware_changed:
+                self._share_out(cfg)
         self.out.set_device(cfg["audio_device"])
         if timing_changed:
             self.next_auto = time.time() + random.uniform(min(10, cfg["auto_min"]), cfg["auto_min"])
         return cfg
+
+    def _share_out(self, cfg):
+        """Hardware settings changed: carry them into the other shows' saved settings too."""
+        for name, show in SHOWS.items():
+            if name == self.show or not show["config"].exists():
+                continue
+            try:
+                other = json.loads(show["config"].read_text())
+            except (OSError, ValueError):
+                continue
+            share(cfg, other)
+            write_safely(show["config"], json.dumps(other, indent=2).encode())
+
+    def switch_show(self, name):
+        """Put a different show on in the yard. Returns an error or None."""
+        if name not in SHOWS:
+            return f"There's no show called {name}"
+        if name == self.show:
+            return None
+        self.stop_sounds()
+        self.stop_radio()
+        with self.lock:
+            old = self.config
+            save_config(old)
+            use_show(name)
+            cfg = load_config() if CONFIG_PATH.exists() else sanitize(first_show_config(old, name))
+            share(old, cfg)
+            self.config, self.show = cfg, name
+            save_config(cfg)
+            write_safely(SHOW_PATH, json.dumps({"live": name}).encode())
+            self.sounds, self._mtimes = {}, {}
+            self.feature = self.feature_vol = None
+            self.fired, self.last_spot = {}, None
+            self.ambience = Ambience()
+            self.next_auto = time.time() + 10
+        self.refresh_sounds()
+        self.add_log(f"Now showing: {SHOWS[name]['title']}")
+        return None
 
     def state(self):
         cfg = self.config
@@ -1500,6 +1605,8 @@ class Engine:
             if cur.get("sweep"):  # how far along the yard it is, 0..1, so the map can follow it
                 np_["progress"] = round(min(1.0, cur["voice"]["pos"] / max(1, cur["samples"])), 3)
         return {
+            "show": self.show,
+            "shows": [{"id": k, "title": v["title"]} for k, v in SHOWS.items()],
             "config": cfg,
             "ambience": self.ambience_tracks(),
             "sounds": [{"name": n, "label": Path(n).stem, "seconds": round(len(m) / RATE, 1),

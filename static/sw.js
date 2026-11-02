@@ -1,9 +1,9 @@
 // Service worker: keeps the app shell on the phone so it opens instantly.
 // Commands (/api/...) always go to the Pi live and are never cached.
-const CACHE = "spooky-v22";
+const CACHE = "spooky-v23";
 const SHELL = [
   "/remote", "/",
-  "/static/style.css", "/static/remote.css", "/static/remote.js", "/static/app.js", "/static/collapse.js",
+  "/static/style.css", "/static/remote.css", "/static/christmas.css", "/static/remote.js", "/static/app.js", "/static/collapse.js",
   "/manifest.webmanifest",
   "/static/icons/icon-192.png", "/static/icons/apple-touch-icon.png",
 ];

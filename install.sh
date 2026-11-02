@@ -70,6 +70,11 @@ if ! ls "$APP_DIR"/sounds/*.* >/dev/null 2>&1; then
   say "Creating starter sounds"
   sudo -u "$RUN_USER" python3 "$APP_DIR/make_placeholder_sounds.py"
 fi
+# The Christmas show's own sounds are made here on the Pi rather than kept in the repo
+if ! ls "$APP_DIR"/sounds-christmas/*.* >/dev/null 2>&1; then
+  say "Creating the Christmas sounds"
+  (cd "$APP_DIR" && sudo -u "$RUN_USER" python3 make_christmas_sounds.py)
+fi
 
 # ---- 5. Survive power cuts --------------------------------------------------------------
 # Out in the yard the power can drop at any moment. Two safety nets:

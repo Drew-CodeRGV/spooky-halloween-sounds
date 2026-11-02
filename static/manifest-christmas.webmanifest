@@ -1,0 +1,25 @@
+{
+  "name": "Lentz Holiday Spectacular",
+  "short_name": "Spectacular",
+  "description": "Run the Christmas show from your phone.",
+  "id": "/remote",
+  "start_url": "/remote",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0b2a1e",
+  "theme_color": "#0b2a1e",
+  "icons": [
+    { "src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/static/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Jingle now", "short_name": "Jingle", "url": "/remote?do=scare",
+      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Stop everything", "short_name": "Stop", "url": "/remote?do=stop",
+      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Full dashboard", "short_name": "Dashboard", "url": "/",
+      "icons": [{ "src": "/static/icons/icon-192.png", "sizes": "192x192" }] }
+  ]
+}

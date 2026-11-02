@@ -1,4 +1,4 @@
-// Spooky Halloween Sounds dashboard
+// Spooky Halloween Sounds dashboard (and the Christmas one: same page logic, its own words)
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -15,7 +15,21 @@ const MODE_HINTS = {
   auto: "A random sound plays on its own every so often, no sensor needed.",
   both: "Plays on its own every so often AND whenever someone walks by.",
 };
-const RADIO_TAGS = ["halloween", "horror", "spooky", "soundtrack", "dark ambient", "oldies", "classic rock"];
+// Which show's page this is. The Pi serves the page for whichever show is on.
+const SHOW = document.documentElement.dataset.show || "halloween";
+const WORDS = {
+  halloween: {
+    radioTags: ["halloween", "horror", "spooky", "soundtrack", "dark ambient", "oldies", "classic rock"],
+    query: "halloween", quiet: "Quiet… for now.", fired: "Boo!", icon: "👻",
+    hiddenOnly: "Jump scares only", hiddenTip: "Stays silent until a sound at the house has everyone looking the other way",
+  },
+  christmas: {
+    radioTags: ["christmas", "xmas", "holiday", "christmas classics", "carols", "christmas jazz", "winter"],
+    query: "christmas", quiet: "All is calm…", fired: "Ho ho ho!", icon: "🎄",
+    hiddenOnly: "Surprises only", hiddenTip: "Stays quiet until a sound at the house has everyone looking the other way",
+  },
+}[SHOW];
+const RADIO_TAGS = WORDS.radioTags;
 
 async function api(path, body, method) {
   const opts = { method: method || (body === undefined ? "GET" : "POST") };
@@ -172,7 +186,7 @@ function renderPlacements() {
         <input type="text" value="${esc(p.name)}" maxlength="30" aria-label="Name">
       </div>
       <label class="toggle"><input type="checkbox" ${p.enabled ? "checked" : ""}><span>Speaker is here</span></label>
-      <label class="toggle" title="Stays silent until a sound at the house has everyone looking the other way"><input type="checkbox" data-act="ambush" ${p.ambush ? "checked" : ""}><span>Jump scares only</span></label>
+      <label class="toggle" title="${WORDS.hiddenTip}"><input type="checkbox" data-act="ambush" ${p.ambush ? "checked" : ""}><span>${WORDS.hiddenOnly}</span></label>
       <div class="meta">
         <span>Denon: ${esc(p.terminal)}</span>
         <label>HDMI ch <select>${channels.map((c) => `<option ${c === p.channel ? "selected" : ""}>${c}</option>`).join("")}</select></label>
@@ -347,7 +361,7 @@ function renderRadioSettings() {
 }
 
 async function searchRadio() {
-  const q = $("radioQuery").value.trim() || "halloween";
+  const q = $("radioQuery").value.trim() || WORDS.query;
   const box = $("stations");
   box.innerHTML = `<div class="muted">Searching for “${esc(q)}”…</div>`;
   const r = await api("/api/radio/search?q=" + encodeURIComponent(q));
@@ -574,8 +588,10 @@ async function findLights() {
 
 const ATMOS_ICONS = [["grave", "🪦"], ["cemet", "🪦"], ["sewer", "🐀"], ["asylum", "🏚️"], ["ward", "🏚️"],
   ["thunder", "⛈️"], ["storm", "⛈️"], ["rain", "🌧️"], ["forest", "🌲"], ["lab", "⚗️"], ["witch", "🧙"],
-  ["cauldron", "🧙"], ["wind", "🌬️"], ["swamp", "🐸"], ["crypt", "⚰️"], ["church", "⛪"]];
-const atmosIcon = (name) => (ATMOS_ICONS.find(([k]) => name.toLowerCase().includes(k)) || [, "👻"])[1];
+  ["cauldron", "🧙"], ["wind", "🌬️"], ["swamp", "🐸"], ["crypt", "⚰️"], ["church", "⛪"],
+  ["fire", "🔥"], ["snow", "❄️"], ["sleigh", "🛷"], ["bell", "🔔"], ["workshop", "🧝"], ["elf", "🧝"],
+  ["carol", "🎶"], ["santa", "🎅"], ["reindeer", "🦌"], ["music_box", "🎁"]];
+const atmosIcon = (name) => (ATMOS_ICONS.find(([k]) => name.toLowerCase().includes(k)) || [, WORDS.icon])[1];
 let atmosKey = "";
 
 function renderAtmos(force) {
@@ -774,7 +790,7 @@ function updateLive() {
   } else {
     const amb = st.ambience && st.ambience.playing;
     const ambLabel = amb ? (state.ambience.find((a) => a.name === amb)?.label || amb) : "";
-    now.textContent = radioOn ? `🎵 Radio: ${st.radio.name}` : amb ? `${atmosIcon(amb)} Atmosphere: ${ambLabel}` : "Quiet… for now.";
+    now.textContent = radioOn ? `🎵 Radio: ${st.radio.name}` : amb ? `${atmosIcon(amb)} Atmosphere: ${ambLabel}` : WORDS.quiet;
     now.classList.toggle("on", radioOn || !!amb);
   }
 
@@ -817,6 +833,7 @@ async function refresh() {
     $("pill").textContent = "Can't reach the Pi";
     return;
   }
+  if (state.show && state.show !== SHOW) return location.reload();   // someone changed the show
   if (!cfg) {
     cfg = state.config;
     renderYard(); renderPlacements(); renderTiming(); renderRadioSettings(); renderMatrix(true); renderDenonSettings(); renderAtmos(true); renderAtmosSettings(); renderSweep(); renderSweepOrder(); renderLights(); renderRing();
@@ -838,7 +855,7 @@ async function refresh() {
 function wire() {
   $("scareBtn").onclick = async () => {
     const r = await api("/api/scare", {});
-    toast(r.started ? "Boo!" : "Already playing. Hang on…");
+    toast(r.started ? WORDS.fired : "Already playing. Hang on…");
     setTimeout(refresh, 150);
   };
   $("sweepLtr").onclick = () => doSweep("ltr");
@@ -959,4 +976,15 @@ if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").cat
 
 wire();
 refresh().then(searchRadio);
+// Show tabs: switching puts the other show on in the yard, so ask first
+document.querySelectorAll(".show-tabs [data-show]").forEach((b) => (b.onclick = async () => {
+  const to = b.dataset.show;
+  if (to === SHOW) return;
+  if (!confirm(`Switch the yard over to the ${b.dataset.title}? Whatever is playing now stops, and that show's own sounds, atmosphere and radio take over.`)) return;
+  b.classList.add("busy");
+  const r = await api("/api/show", { show: to });
+  if (!r.ok) { b.classList.remove("busy"); return toast(r.error); }
+  location.reload();
+}));
+
 setInterval(refresh, 1500);

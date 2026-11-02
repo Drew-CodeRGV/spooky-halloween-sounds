@@ -16,6 +16,7 @@ print(f"hidden spot on channel {HIDDEN}; house spots p1, p5, p7")
 E = engine.Engine.__new__(engine.Engine)
 E.config, E.lock, E.voices, E.log = cfg, threading.Lock(), [], collections.deque(maxlen=50)
 E.stop_gen, E.last_spot, E.last_ambush, E.now_playing = 0, None, 0, None
+E.show = "halloween"
 E.lights = types.SimpleNamespace(show=lambda *a, **k: None)
 quiet_start = np.concatenate([np.zeros(int(0.3 * engine.RATE)), np.ones(int(0.1 * engine.RATE))])
 E.sounds = {"growl.wav": np.ones(int(0.4 * engine.RATE)), "roar.wav": quiet_start * 9000}

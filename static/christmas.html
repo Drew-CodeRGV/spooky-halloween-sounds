@@ -1,0 +1,327 @@
+<!doctype html>
+<html lang="en" data-show="christmas">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0b2a1e">
+<title>Lentz Holiday Spectacular</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Spectacular">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/static/icons/icon-192.png">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Mountains+of+Christmas:wght@400;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/christmas.css">
+</head>
+<body>
+<header class="top">
+  <nav class="show-tabs" aria-label="Which show">
+    <button data-show="halloween" data-title="Lentz Spooktacular Yard">🎃 Lentz Spooktacular Yard</button>
+    <button data-show="christmas" data-title="Lentz Holiday Spectacular" class="on" aria-current="page">🎄 Lentz Holiday Spectacular</button>
+  </nav>
+  <h1>Lentz Holiday Spectacular</h1>
+  <div class="status-row">
+    <span id="pill" class="pill">Connecting…</span>
+    <span id="clock" class="muted"></span>
+    <span id="saveState" class="save-state"></span>
+    <a href="/remote" class="pill" style="text-decoration:none;color:var(--text)">📱 Phone remote</a>
+  </div>
+</header>
+
+<main>
+  <!-- Big controls -->
+  <section class="panel controls">
+    <div class="big-buttons">
+      <button class="btn big pumpkin" id="scareBtn">🔔 Jingle now</button>
+      <button class="btn big" id="motionBtn">🚶 Pretend someone walked by</button>
+      <button class="btn big danger" id="stopBtn">⏹ Stop everything</button>
+    </div>
+    <div class="sweep-row">
+      <button class="btn big" id="sweepRtl" title="One sound travels across every speaker, last to first">⟵ Sweep</button>
+      <div class="sweep-opts">
+        <label class="slider-row"><span>Sweep takes</span><input type="range" id="sweepSecs" min="2" max="30" step="1"><output id="sweepSecsOut"></output></label>
+        <label class="field sweep-sound">Sound <select id="sweepSound"></select></label>
+      </div>
+      <button class="btn big" id="sweepLtr" title="One sound travels across every speaker, first to last">Sweep ⟶</button>
+    </div>
+    <div class="now" id="nowPlaying">All is calm…</div>
+    <div id="audioError" class="alert hidden"></div>
+    <label class="slider-row">
+      <span>Master volume</span>
+      <input type="range" id="master" min="0" max="1" step="0.01">
+      <output id="masterOut"></output>
+    </label>
+  </section>
+
+  <!-- Yard map -->
+  <section class="panel">
+    <h2>The Yard</h2>
+    <p class="hint"><b>Drag</b> each speaker to where it really is in your yard. <b>Tap</b> one to play a sound there. Glowing = playing now. 🎵 = radio. Sweeps and drifts travel left to right across this map. The dotted lines at the top are your Govee light chains, each over the part of the yard it covers.</p>
+    <div class="yard" id="yard">
+      <div class="house"><div class="roof"></div><div class="door"></div><span>House</span></div>
+      <div class="sidewalk">sidewalk · carolers walk here</div>
+    </div>
+    <p class="muted small" id="sweepOrder"></p>
+  </section>
+
+  <!-- Denon -->
+  <section class="panel">
+    <h2>Denon Receiver</h2>
+    <div class="denon-status" id="denonStatus">Looking for the Denon…</div>
+    <div class="big-buttons denon-buttons">
+      <button class="btn" data-denon="on">⏻ On</button>
+      <button class="btn danger" data-denon="standby">⏾ Standby</button>
+      <button class="btn" data-denon="mute" id="denonMute">🔇 Mute</button>
+    </div>
+    <div class="denon-volume">
+      <button class="btn" data-denon="nudge" data-value="-2">－</button>
+      <input type="range" id="denonVol" min="-80" step="0.5">
+      <button class="btn" data-denon="nudge" data-value="2">＋</button>
+      <output id="denonVolOut">–</output>
+    </div>
+    <div class="grid2">
+      <fieldset>
+        <legend>Right now</legend>
+        <label class="field">Input <select id="denonInput"></select></label>
+        <label class="field">Sound mode <select id="denonMode"></select></label>
+      </fieldset>
+      <fieldset>
+        <legend>Safety</legend>
+        <label class="slider-row"><span>Never louder than</span><input type="range" id="denonMax" min="-60" max="0" step="1"><output id="denonMaxOut"></output></label>
+        <div class="muted small">The volume slider and buttons here can't go above this.</div>
+      </fieldset>
+    </div>
+    <details>
+      <summary>Connection</summary>
+      <div class="radio-search">
+        <input type="text" id="denonHost" placeholder="10.42.0.x" spellcheck="false">
+        <button class="btn" data-denon="find">🔍 Find Denon</button>
+      </div>
+      <p class="muted small">The Denon is connected by Ethernet cable to the Pi, which shares its Wi-Fi with it. To turn it on from standby, set the Denon's <b>Network Standby</b> (Setup → Network) to <b>On</b>.</p>
+    </details>
+  </section>
+
+  <!-- Ring doorbell -->
+  <section class="panel">
+    <h2>Ring Doorbell</h2>
+    <div class="denon-status" id="ringStatus"></div>
+    <label class="toggle"><input type="checkbox" id="ringOn"><span>Play a sound when the Ring sees someone or the doorbell is pressed</span></label>
+    <div class="grid2 radio-settings">
+      <fieldset>
+        <legend>🚶 Motion at the door</legend>
+        <label class="toggle"><input type="checkbox" id="ringMotionOn"><span>Play a sound</span></label>
+        <label class="field">Sound <select id="ringMotionSound"></select></label>
+        <label class="slider-row"><span>Volume</span><input type="range" id="ringMotionVol" min="0" max="1" step="0.05"><output id="ringMotionVolOut"></output></label>
+        <button class="btn small" data-ring-test="motion">▶ Test motion</button>
+      </fieldset>
+      <fieldset>
+        <legend>🔔 Doorbell pressed</legend>
+        <label class="toggle"><input type="checkbox" id="ringDingOn"><span>Play a sound</span></label>
+        <label class="field">Sound <select id="ringDingSound"></select></label>
+        <label class="slider-row"><span>Volume</span><input type="range" id="ringDingVol" min="0" max="1" step="0.05"><output id="ringDingVolOut"></output></label>
+        <button class="btn small" data-ring-test="ding">▶ Test doorbell</button>
+      </fieldset>
+      <fieldset>
+        <legend>Settings</legend>
+        <label class="field">Speaker by the door <select id="ringSpot"></select></label>
+        <div class="range-pair">Wait <input type="number" id="ringCooldown" min="0" max="3600"> seconds between motion sounds</div>
+        <label class="toggle"><input type="checkbox" id="ringHours"><span>Only during active hours</span></label>
+        <div class="field">Ring devices that count
+          <div class="chips" id="ringDevices"></div>
+          <div class="muted small" id="ringDevicesHint"></div>
+        </div>
+      </fieldset>
+    </div>
+    <details id="ringSetup">
+      <summary>Connect your Ring account</summary>
+      <p class="small">Sign in once, on the Pi itself, so your password never passes through this page. In a terminal on the Pi (or over SSH), run:</p>
+      <pre class="cmd">~/spooky-halloween-sounds/.venv/bin/python ~/spooky-halloween-sounds/ring_setup.py</pre>
+      <p class="muted small">It asks for your Ring email, password and the code Ring texts you, and saves only a sign-in token on the Pi. To disconnect later: Ring app → Control Center → Authorized Client Devices.</p>
+    </details>
+  </section>
+
+  <!-- Govee lights -->
+  <section class="panel">
+    <h2>Govee Lights</h2>
+    <p class="hint">Lights flare and twinkle with the sounds. Give each light a yard spot so it reacts when that speaker plays (or <b>All spots</b> to react to everything). For a string of bulbs, turn on <b>Chain across the yard</b>: only the bulbs nearest each sound light up, and sweeps travel along them. Tell each string <b>which part of the yard it covers</b> (0% = west, 100% = east) so a sound in the east doesn't light the string in the west. Several strings are numbered as one run — a 4-bulb string in the west is bulbs 1-4, the next one east is 5-8 — and you can see them on the yard map. Turn on <b>LAN Control</b> for each light in the Govee Home app first.</p>
+    <label class="toggle"><input type="checkbox" id="lightsOn"><span>Sync lights with the sounds</span></label>
+    <div class="lights" id="lightsList"></div>
+    <button class="btn" id="lightsFind">🔍 Find lights</button>
+    <div class="grid2 radio-settings">
+      <fieldset>
+        <legend>Between surprises</legend>
+        <label class="field">Idle color <input type="color" id="lightsIdleColor"></label>
+        <label class="slider-row"><span>Idle brightness</span><input type="range" id="lightsIdle" min="0" max="100" step="1"><output id="lightsIdleOut"></output></label>
+        <label class="toggle"><input type="checkbox" id="lightsFlicker"><span>Twinkle between surprises</span></label>
+        <label class="slider-row"><span>Twinkle speed</span><input type="range" id="lightsFlickRate" min="0.2" max="15" step="0.2"><output id="lightsFlickRateOut"></output></label>
+        <label class="slider-row"><span>Twinkle depth</span><input type="range" id="lightsFlickDepth" min="0" max="1" step="0.05"><output id="lightsFlickDepthOut"></output></label>
+        <div class="muted small">Speed is how often each bulb picks a new level; depth is how far it dips. Slow and shallow is a soft glow, fast and deep a sparkling twinkle. Depth 0 turns it off.</div>
+      </fieldset>
+      <fieldset class="lights-schedule">
+        <legend>Schedule</legend>
+        <label class="toggle"><input type="checkbox" id="lightsSched"><span>Only on in the evening</span></label>
+        <div class="range-pair">On <input type="number" id="lightsBefore" min="-180" max="300"> minutes before sunset, off at <input type="time" id="lightsOff"></div>
+        <div class="radio-search">
+          <input type="search" id="lightsPlace" placeholder="Your town or ZIP (for sunset times)">
+          <button class="btn small" id="lightsPlaceBtn">Set</button>
+        </div>
+        <div class="chips" id="lightsPlaces"></div>
+        <div class="muted small" id="lightsSchedInfo"></div>
+      </fieldset>
+      <fieldset>
+        <legend>During a surprise</legend>
+        <label class="slider-row"><span>Flash brightness</span><input type="range" id="lightsFlash" min="1" max="100" step="1"><output id="lightsFlashOut"></output></label>
+        <label class="slider-row"><span>Other lights react</span><input type="range" id="lightsRipple" min="0" max="1" step="0.05"><output id="lightsRippleOut"></output></label>
+        <div class="muted small">How much the lights away from the sound still flicker and tint along with it. 0% = only the nearest light reacts.</div>
+        <div class="muted small">Colors follow the sound: gold for bells, sleighs and music boxes, red for Santa and reindeer, green for elves and trees, icy blue for snow and winter wind, orange for everything else.</div>
+      </fieldset>
+    </div>
+  </section>
+
+  <!-- Background atmosphere -->
+  <section class="panel">
+    <h2>Background Atmosphere</h2>
+    <p class="hint">A loop that keeps playing quietly underneath, with the surprises on top. Tap one to start it; tap it again to stop.</p>
+    <div class="atmos" id="atmos"></div>
+    <div class="grid2 radio-settings">
+      <fieldset>
+        <legend>Plays on</legend>
+        <div class="chips" id="atmosSpots"></div>
+        <div class="muted small">Each speaker plays a different part of the loop, so the yard sounds bigger.</div>
+      </fieldset>
+      <fieldset>
+        <legend>Atmosphere settings</legend>
+        <label class="slider-row"><span>Volume</span><input type="range" id="atmosVol" min="0" max="1" step="0.01"><output id="atmosVolOut"></output></label>
+        <label class="toggle"><input type="checkbox" id="atmosHours"><span>Only during active hours</span></label>
+        <div class="upload">
+          <label class="btn small" for="atmosFile">⬆ Add background</label>
+          <input type="file" id="atmosFile" accept="audio/*,.wav,.mp3,.ogg,.flac,.m4a" multiple hidden>
+        </div>
+      </fieldset>
+    </div>
+    <fieldset class="radio-settings">
+      <legend>On a schedule</legend>
+      <p class="muted small">At its time, a timed track takes over from the loop, plays once all the way through, then hands back. "Every hour" means on the hour.</p>
+      <div id="atmosSched"></div>
+      <button class="btn small" id="atmosSchedAdd">＋ Add a timed track</button>
+      <div class="muted small" id="atmosSchedNext"></div>
+    </fieldset>
+  </section>
+
+  <!-- Placements -->
+  <section class="panel">
+    <h2>Speaker Placements</h2>
+    <p class="hint">Name each spot and turn on the ones that have a speaker. <b>Beep</b> plays 3 beeps on that channel so you can find which speaker it is. If the wrong speaker beeps, change the channel number.</p>
+    <div class="cards" id="placements"></div>
+  </section>
+
+  <!-- Timing -->
+  <section class="panel">
+    <h2>When to Play</h2>
+    <div class="segmented" id="mode">
+      <button data-mode="off">Off</button>
+      <button data-mode="motion">Motion sensor</button>
+      <button data-mode="auto">Automatic</button>
+      <button data-mode="both">Both</button>
+    </div>
+    <p class="hint" id="modeHint"></p>
+    <div class="grid2">
+      <fieldset>
+        <legend>Automatic: play every</legend>
+        <div class="range-pair">
+          <input type="number" id="autoMin" min="1"> to <input type="number" id="autoMax" min="1">
+          <select id="autoUnit"><option value="1">seconds</option><option value="60">minutes</option></select>
+        </div>
+        <div class="muted small" id="nextAuto"></div>
+      </fieldset>
+      <fieldset>
+        <legend>After motion: wait before the next surprise</legend>
+        <div class="range-pair">
+          <input type="number" id="coolMin" min="1"> to <input type="number" id="coolMax" min="1"> seconds
+        </div>
+        <div class="muted small" id="sensorInfo"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Tricks</legend>
+        <label class="slider-row"><span>Another speaker answers</span><input type="range" id="answer" min="0" max="1" step="0.05"><output id="answerOut"></output></label>
+        <label class="slider-row"><span>Sound drifts between speakers</span><input type="range" id="creep" min="0" max="1" step="0.05"><output id="creepOut"></output></label>
+        <label class="slider-row"><span>Surprise from a hidden spot</span><input type="range" id="ambush" min="0" max="1" step="0.05"><output id="ambushOut"></output></label>
+        <div class="muted small">While a sound at the house has their attention, a speaker set to "Surprises only" pops up from behind them. At most once every 90 seconds.</div>
+      </fieldset>
+      <fieldset>
+        <legend>Active hours</legend>
+        <label class="toggle"><input type="checkbox" id="hoursOn"><span>Only play between</span></label>
+        <div class="range-pair"><input type="time" id="hoursStart"> and <input type="time" id="hoursEnd"></div>
+        <div class="muted small">Motion and automatic surprises stay quiet outside these hours. Buttons on this page always work.</div>
+      </fieldset>
+    </div>
+  </section>
+
+  <!-- Sound matrix -->
+  <section class="panel">
+    <h2>Sounds × Speakers</h2>
+    <p class="hint"><b>On</b> switches a sound off everywhere at once (your speaker checkboxes are kept). <b>Sweep</b> makes that sound travel across the whole yard every time it plays. <b>Light</b> picks the color the Govee lights flash for that sound (↺ goes back to the automatic color). ▶ plays it in the yard; 🎧 previews it on this device only. Checked = this sound can play from that speaker.</p>
+    <div class="table-wrap"><table class="matrix" id="matrix"></table></div>
+    <div class="upload">
+      <label class="btn" for="fileInput">⬆ Add sounds</label>
+      <input type="file" id="fileInput" accept="audio/*,.wav,.mp3,.ogg,.flac,.m4a" multiple hidden>
+      <span class="muted small">MP3, WAV, OGG, FLAC or M4A. Free sounds: freesound.org (filter by CC0), pixabay.com/sound-effects</span>
+    </div>
+  </section>
+
+  <!-- Radio -->
+  <section class="panel">
+    <h2>Christmas Radio</h2>
+    <div class="radio-now" id="radioNow"></div>
+    <div class="radio-search">
+      <input type="search" id="radioQuery" placeholder="Search stations, e.g. christmas" value="christmas">
+      <button class="btn" id="radioSearchBtn">Search</button>
+    </div>
+    <div class="chips" id="radioTags"></div>
+    <div class="stations" id="stations"></div>
+    <details>
+      <summary>Play a stream link</summary>
+      <div class="radio-search">
+        <input type="url" id="radioUrl" placeholder="https://… (an .mp3, .aac or .m3u8 stream link)">
+        <button class="btn" id="radioUrlBtn">Play</button>
+      </div>
+    </details>
+    <div class="grid2 radio-settings">
+      <fieldset>
+        <legend>Radio plays on</legend>
+        <div class="chips" id="radioSpots"></div>
+      </fieldset>
+      <fieldset>
+        <legend>Radio settings</legend>
+        <label class="slider-row"><span>Radio volume</span><input type="range" id="radioVol" min="0" max="1" step="0.01"><output id="radioVolOut"></output></label>
+        <label class="toggle"><input type="checkbox" id="radioOverride"><span>Radio replaces the surprise sounds</span></label>
+        <label class="toggle"><input type="checkbox" id="radioAutoplay"><span>Resume last station when the Pi restarts</span></label>
+      </fieldset>
+    </div>
+    <p class="muted small">Stations come from the free radio-browser.info directory. Pandora isn't available because it doesn't let other devices play its stations without a paid account.</p>
+  </section>
+
+  <!-- Log -->
+  <section class="panel">
+    <h2>What's Been Happening</h2>
+    <ul class="log" id="log"></ul>
+  </section>
+
+  <section class="panel">
+    <details>
+      <summary>Advanced</summary>
+      <label class="field">Audio device <input id="device" spellcheck="false"></label>
+      <p class="muted small">Default <code>hdmi:CARD=vc4hdmi0,DEV=0</code> is the Pi 4's HDMI port next to the power port. Use <code>hdmi:CARD=vc4hdmi1,DEV=0</code> for the other HDMI port.</p>
+    </details>
+  </section>
+</main>
+
+<div id="toast" class="toast"></div>
+<script src="/static/collapse.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
